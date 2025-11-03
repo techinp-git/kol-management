@@ -1,12 +1,11 @@
-"use client"
 import { notFound } from "next/navigation"
 import { KOLDetailClient } from "@/components/kol-detail-client"
 import { createClient } from "@/lib/supabase/server"
 
 type KOLStatus = "active" | "inactive" | "draft" | "ban"
 
-export default async function KOLDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export default async function KOLDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params
 
   const supabase = await createClient()
 
