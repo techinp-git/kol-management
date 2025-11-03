@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, Search } from "lucide-react"
 import Link from "next/link"
 import { Input } from "@/components/ui/input"
+import { createClient } from "@/lib/supabase/server"
 
 type KOLStatus = "active" | "inactive" | "draft" | "ban"
 
@@ -38,63 +39,25 @@ const getStatusLabel = (status: KOLStatus) => {
 }
 
 export default async function KOLsPage() {
-  const kols = [
-    {
-      id: "1",
-      name: "สมชาย ใจดี",
-      handle: "somchai_lifestyle",
-      category: ["Lifestyle", "Travel"],
-      status: "active" as KOLStatus,
-      created_at: "2024-01-15",
-      kol_channels: [
-        {
-          id: "1",
-          channel_type: "Instagram",
-          handle: "somchai_lifestyle",
-          follower_count: 125000,
-          engagement_rate: 4.5,
-        },
-        { id: "2", channel_type: "TikTok", handle: "somchai_tt", follower_count: 89000, engagement_rate: 6.2 },
-        { id: "3", channel_type: "YouTube", handle: "SomchaiVlogs", follower_count: 45000, engagement_rate: 3.8 },
-      ],
-    },
-    {
-      id: "2",
-      name: "มาลี สวยงาม",
-      handle: "malee_beauty",
-      category: ["Beauty", "Fashion"],
-      status: "active" as KOLStatus,
-      created_at: "2024-01-20",
-      kol_channels: [
-        { id: "4", channel_type: "Instagram", handle: "malee_beauty", follower_count: 250000, engagement_rate: 5.8 },
-        { id: "5", channel_type: "YouTube", handle: "MaleeBeauty", follower_count: 180000, engagement_rate: 4.2 },
-      ],
-    },
-    {
-      id: "3",
-      name: "ปิยะ เทคโนโลยี",
-      handle: "piya_tech",
-      category: ["Technology", "Gaming"],
-      status: "inactive" as KOLStatus,
-      created_at: "2024-02-01",
-      kol_channels: [
-        { id: "6", channel_type: "YouTube", handle: "PiyaTech", follower_count: 320000, engagement_rate: 7.1 },
-        { id: "7", channel_type: "TikTok", handle: "piya_tech", follower_count: 156000, engagement_rate: 8.3 },
-      ],
-    },
-    {
-      id: "4",
-      name: "นภา อาหาร",
-      handle: "napa_foodie",
-      category: ["Food", "Lifestyle"],
-      status: "active" as KOLStatus,
-      created_at: "2024-02-10",
-      kol_channels: [
-        { id: "8", channel_type: "Instagram", handle: "napa_foodie", follower_count: 95000, engagement_rate: 6.5 },
-        { id: "9", channel_type: "TikTok", handle: "napa_eats", follower_count: 210000, engagement_rate: 9.2 },
-      ],
-    },
-  ]
+  const supabase = await createClient()
+
+  const { data: kols, error } = await supabase
+    .from("kols")
+    .select(`
+      *,
+      kol_channels (
+        id,
+        channel_type,
+        handle,
+        follower_count,
+        engagement_rate
+      )
+    `)
+    .order("created_at", { ascending: false })
+
+  if (error) {
+    console.error("[v0] Error fetching KOLs:", error)
+  }
 
   return (
     <div className="space-y-6">
@@ -121,42 +84,58 @@ export default async function KOLsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {kols.map((kol) => (
-              <Link key={kol.id} href={`/dashboard/kols/${kol.id}`} className="block">
-                <Card className="cursor-pointer transition-colors hover:bg-accent">
-                  <CardContent className="flex items-center justify-between p-6">
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">
-                        {kol.name.charAt(0)}
-                      </div>
-                      <div>
-                        <h3 className="font-semibold">{kol.name}</h3>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <span>@{kol.handle}</span>
-                          <span>•</span>
-                          <span>{kol.category.join(", ")}</span>
+          {!kols || kols.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground">ยังไม่มี KOL ในระบบ</p>
+              <Link href="/dashboard/kols/new">
+                <Button className="mt-4">
+                  <Plus className="mr-2 h-4 w-4" />
+                  เพิ่ม KOL แรก
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {kols.map((kol) => (
+                <Link key={kol.id} href={`/dashboard/kols/${kol.id}`} className="block">
+                  <Card className="cursor-pointer transition-colors hover:bg-accent">
+                    <CardContent className="flex items-center justify-between p-6">
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">
+                          {kol.name.charAt(0)}
+                        </div>
+                        <div>
+                          <h3 className="font-semibold">{kol.name}</h3>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            {kol.handle && (
+                              <>
+                                <span>@{kol.handle}</span>
+                                <span>•</span>
+                              </>
+                            )}
+                            {kol.category && Array.isArray(kol.category) && <span>{kol.category.join(", ")}</span>}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="flex gap-2">
-                        {kol.kol_channels.slice(0, 3).map((channel: any) => (
-                          <Badge key={channel.id} variant="secondary">
-                            {channel.channel_type}
-                          </Badge>
-                        ))}
-                        {kol.kol_channels.length > 3 && (
-                          <Badge variant="secondary">+{kol.kol_channels.length - 3}</Badge>
-                        )}
+                      <div className="flex items-center gap-4">
+                        <div className="flex gap-2">
+                          {kol.kol_channels?.slice(0, 3).map((channel: any) => (
+                            <Badge key={channel.id} variant="secondary">
+                              {channel.channel_type}
+                            </Badge>
+                          ))}
+                          {kol.kol_channels && kol.kol_channels.length > 3 && (
+                            <Badge variant="secondary">+{kol.kol_channels.length - 3}</Badge>
+                          )}
+                        </div>
+                        <Badge variant={getStatusBadgeVariant(kol.status)}>{getStatusLabel(kol.status)}</Badge>
                       </div>
-                      <Badge variant={getStatusBadgeVariant(kol.status)}>{getStatusLabel(kol.status)}</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

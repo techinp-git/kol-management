@@ -106,13 +106,30 @@ export function KOLForm({ kol }: { kol?: any }) {
     setError(null)
 
     try {
-      // Mock save - in demo mode
-      console.log("[v0] Saving KOL:", { name, handle, selectedCategories, channels })
+      const response = await fetch("/api/kols", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          handle,
+          category: selectedCategories,
+          country,
+          contact_email: contactEmail,
+          contact_phone: contactPhone,
+          bio,
+          notes,
+          status: "draft",
+          channels,
+        }),
+      })
 
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || "Failed to save KOL")
+      }
 
-      router.push("/dashboard/kols")
+      const data = await response.json()
+      router.push(`/dashboard/kols/${data.id}`)
       router.refresh()
     } catch (err: any) {
       setError(err.message)
