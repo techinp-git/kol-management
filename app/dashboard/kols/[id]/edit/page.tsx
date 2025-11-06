@@ -6,7 +6,7 @@ export default async function EditKOLPage({ params }: { params: Promise<{ id: st
   const { id } = await params
   const supabase = await createClient()
 
-  const { data: kol } = await supabase
+  const { data: kol, error } = await supabase
     .from("kols")
     .select(
       `
@@ -29,7 +29,15 @@ export default async function EditKOLPage({ params }: { params: Promise<{ id: st
     .eq("id", id)
     .single()
 
+  if (error) {
+    console.error("[v0] Error fetching KOL for edit:", error)
+    console.error("[v0] Error code:", error.code)
+    console.error("[v0] Error details:", error.details)
+    notFound()
+  }
+
   if (!kol) {
+    console.error("[v0] KOL not found:", id)
     notFound()
   }
 

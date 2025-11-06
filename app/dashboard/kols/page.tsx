@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Search } from "lucide-react"
+import { Plus, Search, Pencil } from "lucide-react"
 import Link from "next/link"
 import { Input } from "@/components/ui/input"
 import { createClient } from "@/lib/supabase/server"
@@ -97,42 +97,45 @@ export default async function KOLsPage() {
           ) : (
             <div className="space-y-4">
               {kols.map((kol) => (
-                <Link key={kol.id} href={`/dashboard/kols/${kol.id}`} className="block">
-                  <Card className="cursor-pointer transition-colors hover:bg-accent">
-                    <CardContent className="flex items-center justify-between p-6">
-                      <div className="flex items-center gap-4">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">
-                          {kol.name.charAt(0)}
-                        </div>
-                        <div>
-                          <h3 className="font-semibold">{kol.name}</h3>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            {kol.handle && (
-                              <>
-                                <span>@{kol.handle}</span>
-                                <span>•</span>
-                              </>
-                            )}
-                            {kol.category && Array.isArray(kol.category) && <span>{kol.category.join(", ")}</span>}
-                          </div>
-                        </div>
+                <Card key={kol.id} className="transition-colors hover:bg-accent">
+                  <CardContent className="flex items-center justify-between p-6">
+                    <Link href={`/dashboard/kols/${kol.id}`} className="flex items-center gap-4 flex-1">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">
+                        {kol.name.charAt(0)}
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div className="flex gap-2">
-                          {kol.kol_channels?.slice(0, 3).map((channel: any) => (
-                            <Badge key={channel.id} variant="secondary">
-                              {channel.channel_type}
-                            </Badge>
-                          ))}
-                          {kol.kol_channels && kol.kol_channels.length > 3 && (
-                            <Badge variant="secondary">+{kol.kol_channels.length - 3}</Badge>
+                      <div>
+                        <h3 className="font-semibold">{kol.name}</h3>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          {kol.handle && (
+                            <>
+                              <span>@{kol.handle}</span>
+                              <span>•</span>
+                            </>
                           )}
+                          {kol.category && Array.isArray(kol.category) && <span>{kol.category.join(", ")}</span>}
                         </div>
-                        <Badge variant={getStatusBadgeVariant(kol.status)}>{getStatusLabel(kol.status)}</Badge>
                       </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+                    </Link>
+                    <div className="flex items-center gap-4">
+                      <div className="flex gap-2">
+                        {kol.kol_channels?.slice(0, 3).map((channel: any) => (
+                          <Badge key={channel.id} variant="secondary">
+                            {channel.channel_type}
+                          </Badge>
+                        ))}
+                        {kol.kol_channels && kol.kol_channels.length > 3 && (
+                          <Badge variant="secondary">+{kol.kol_channels.length - 3}</Badge>
+                        )}
+                      </div>
+                      <Badge variant={getStatusBadgeVariant(kol.status)}>{getStatusLabel(kol.status)}</Badge>
+                      <Link href={`/dashboard/kols/${kol.id}/edit`}>
+                        <Button variant="ghost" size="sm">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           )}

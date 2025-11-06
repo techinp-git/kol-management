@@ -1,8 +1,8 @@
 import { createServerClient as createServerClientSSR } from "@supabase/ssr"
 import { cookies } from "next/headers"
 
-const supabaseUrl = process.env.SUPABASE_URL!
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://sqaffprdetbrxrdnslfm.supabase.co"
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxYWZmcHJkZXRicnhyZG5zbGZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NDc2MTEsImV4cCI6MjA3NzIyMzYxMX0.HyqQZgiqFbf2HEXDUMhMpaREa59Wtt6ClUx5Smaxxtk"
 
 /**
  * Server-side Supabase client for use in Server Components, Route Handlers, and Server Actions.

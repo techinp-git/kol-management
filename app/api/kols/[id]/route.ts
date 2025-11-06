@@ -49,21 +49,33 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const { name, handle, category, country, contact_email, contact_phone, bio, notes, status, channels } = body
 
+    // Validate status - allow: 'active', 'inactive', 'blacklisted', 'draft', 'ban'
+    const validStatuses = ['active', 'inactive', 'blacklisted', 'draft', 'ban']
+    const validStatus = status && validStatuses.includes(status) 
+      ? status 
+      : undefined // Don't update status if invalid
+
     // Update KOL
+    const updateData: any = {
+      name,
+      handle,
+      category,
+      country,
+      contact_email,
+      contact_phone,
+      bio,
+      notes,
+      updated_at: new Date().toISOString(),
+    }
+
+    // Only update status if it's valid
+    if (validStatus !== undefined) {
+      updateData.status = validStatus
+    }
+
     const { data: kol, error: kolError } = await supabase
       .from("kols")
-      .update({
-        name,
-        handle,
-        category,
-        country,
-        contact_email,
-        contact_phone,
-        bio,
-        notes,
-        status,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq("id", id)
       .select()
       .single()

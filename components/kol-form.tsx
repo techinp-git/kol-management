@@ -118,7 +118,7 @@ export function KOLForm({ kol }: { kol?: any }) {
           contact_phone: contactPhone,
           bio,
           notes,
-          status: "draft",
+          status: "active", // Default to 'active' (valid values: 'active', 'inactive', 'blacklisted')
           channels,
         }),
       })
@@ -129,7 +129,10 @@ export function KOLForm({ kol }: { kol?: any }) {
       }
 
       const data = await response.json()
-      router.push(`/dashboard/kols/${data.id}`)
+      console.log("[v0] KOL created successfully:", data)
+      
+      // Redirect to list page instead of detail page
+      router.push("/dashboard/kols")
       router.refresh()
     } catch (err: any) {
       setError(err.message)

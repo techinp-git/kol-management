@@ -13,9 +13,9 @@ CREATE TABLE IF NOT EXISTS public.status_changes (
 );
 
 -- Create indexes for better query performance
-CREATE INDEX idx_status_changes_entity ON public.status_changes(entity_type, entity_id);
-CREATE INDEX idx_status_changes_changed_by ON public.status_changes(changed_by);
-CREATE INDEX idx_status_changes_created_at ON public.status_changes(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_status_changes_entity ON public.status_changes(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_status_changes_changed_by ON public.status_changes(changed_by);
+CREATE INDEX IF NOT EXISTS idx_status_changes_created_at ON public.status_changes(created_at DESC);
 
 -- Enable Row Level Security
 ALTER TABLE public.status_changes ENABLE ROW LEVEL SECURITY;

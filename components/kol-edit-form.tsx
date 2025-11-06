@@ -132,7 +132,8 @@ export function KOLEditForm({ kol }: { kol: any }) {
         throw new Error(data.error || "Failed to update KOL")
       }
 
-      router.push(`/dashboard/kols/${kol.id}`)
+      // Redirect to list page after successful update
+      router.push("/dashboard/kols")
       router.refresh()
     } catch (err: any) {
       setError(err.message)

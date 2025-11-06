@@ -9,6 +9,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const { status, reason } = body
 
+    // Validate status - allow: 'active', 'inactive', 'blacklisted', 'draft', 'ban'
+    const validStatuses = ['active', 'inactive', 'blacklisted', 'draft', 'ban']
+    if (!status || !validStatuses.includes(status)) {
+      return NextResponse.json(
+        { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
     // Update KOL status
     const { data: kol, error: kolError } = await supabase
       .from("kols")

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { buildInfo, formatBuildDate } from "@/lib/build-info"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -85,6 +86,15 @@ export default function LoginPage() {
             </form>
           </CardContent>
         </Card>
+        {/* Version and Build Info */}
+        <div className="mt-4 text-center">
+          <p className="text-xs text-muted-foreground">
+            Version {buildInfo.version}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Updated: {formatBuildDate(buildInfo.buildDate)}
+          </p>
+        </div>
       </div>
     </div>
   )

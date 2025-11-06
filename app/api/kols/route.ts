@@ -9,6 +9,13 @@ export async function POST(request: Request) {
     const { name, handle, category, country, contact_email, contact_phone, bio, notes, status, channels } = body
 
     // Insert KOL
+    // Validate status - allow: 'active', 'inactive', 'blacklisted', 'draft', 'ban'
+    const validStatuses = ['active', 'inactive', 'blacklisted', 'draft', 'ban']
+    const validStatus = status && validStatuses.includes(status) 
+      ? status 
+      : 'active'
+    
+    // First, try to insert and get the result back
     const { data: kol, error: kolError } = await supabase
       .from("kols")
       .insert({
@@ -20,15 +27,31 @@ export async function POST(request: Request) {
         contact_phone,
         bio,
         notes,
-        status: status || "draft",
+        status: validStatus,
       })
       .select()
       .single()
 
     if (kolError) {
       console.error("[v0] Error creating KOL:", kolError)
+      console.error("[v0] Error code:", kolError.code)
+      console.error("[v0] Error details:", kolError.details)
+      console.error("[v0] Error hint:", kolError.hint)
       return NextResponse.json({ error: kolError.message }, { status: 400 })
     }
+
+    // Check if KOL was created and has ID
+    if (!kol || !kol.id) {
+      console.error("[v0] KOL created but no ID returned")
+      console.error("[v0] Returned data:", JSON.stringify(kol, null, 2))
+      console.error("[v0] This is likely an RLS (Row Level Security) issue")
+      console.error("[v0] The KOL was inserted but cannot be read back due to permissions")
+      return NextResponse.json({ 
+        error: "KOL created but unable to retrieve ID. This is likely an RLS (Row Level Security) issue. Please check database permissions." 
+      }, { status: 500 })
+    }
+
+    console.log("[v0] KOL created successfully with ID:", kol.id)
 
     // Insert channels if provided
     if (channels && channels.length > 0) {

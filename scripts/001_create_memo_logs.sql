@@ -13,14 +13,27 @@ CREATE TABLE IF NOT EXISTS public.memo_logs (
 );
 
 -- Create indexes for better query performance
-CREATE INDEX idx_memo_logs_entity ON public.memo_logs(entity_type, entity_id);
-CREATE INDEX idx_memo_logs_created_by ON public.memo_logs(created_by);
-CREATE INDEX idx_memo_logs_created_at ON public.memo_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memo_logs_entity ON public.memo_logs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_memo_logs_created_by ON public.memo_logs(created_by);
+CREATE INDEX IF NOT EXISTS idx_memo_logs_created_at ON public.memo_logs(created_at DESC);
 
 -- Enable Row Level Security
 ALTER TABLE public.memo_logs ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+-- Drop existing policies first to avoid conflicts
+DROP POLICY IF EXISTS "Admins can view all memo logs" ON public.memo_logs;
+DROP POLICY IF EXISTS "Analysts can view all memo logs" ON public.memo_logs;
+DROP POLICY IF EXISTS "Brand users can view memo logs for their entities" ON public.memo_logs;
+DROP POLICY IF EXISTS "KOL users can view their own memo logs" ON public.memo_logs;
+DROP POLICY IF EXISTS "Admins and analysts can insert memo logs" ON public.memo_logs;
+DROP POLICY IF EXISTS "Admins can update memo logs" ON public.memo_logs;
+DROP POLICY IF EXISTS "Admins can delete memo logs" ON public.memo_logs;
+DROP POLICY IF EXISTS "Authenticated users can view memo logs" ON public.memo_logs;
+DROP POLICY IF EXISTS "Authenticated users can insert memo logs" ON public.memo_logs;
+DROP POLICY IF EXISTS "Authenticated users can update memo logs" ON public.memo_logs;
+DROP POLICY IF EXISTS "Authenticated users can delete memo logs" ON public.memo_logs;
+
 CREATE POLICY "Admins can view all memo logs"
   ON public.memo_logs FOR SELECT
   USING (
