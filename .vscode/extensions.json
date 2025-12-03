@@ -1,8 +1,0 @@
-{
-  "recommendations": [
-    "supabase.supabase-vscode",
-    "ms-ossdata.vscode-postgresql",
-    "ckolkman.vscode-postgres"
-  ]
-}
-
