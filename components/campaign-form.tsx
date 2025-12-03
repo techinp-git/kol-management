@@ -4,7 +4,6 @@ import type React from "react"
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -41,6 +40,7 @@ export function CampaignForm({
   const [selectedChannels, setSelectedChannels] = useState<string[]>(initialData?.channels || [])
   const [notes, setNotes] = useState(initialData?.notes || "")
 
+  // Map existing campaign_kols to form format
   const [selectedKols, setSelectedKols] = useState<
     Array<{
       kol_id: string
@@ -51,7 +51,7 @@ export function CampaignForm({
     initialData?.campaign_kols?.map((ck: any) => ({
       kol_id: ck.kol_id,
       kol_channel_id: ck.kol_channel_id,
-      allocated_budget: ck.allocated_budget?.toString() || "",
+      allocated_budget: ck.allocated_budget ? ck.allocated_budget.toString() : "",
     })) || [],
   )
 
@@ -100,13 +100,14 @@ export function CampaignForm({
     setIsLoading(true)
     setError(null)
 
-    const supabase = createClient()
-
     try {
-      // Insert campaign
-      const { data: campaignData, error: campaignError } = await supabase
-        .from("campaigns")
-        .insert({
+      const url = initialData?.id ? `/api/campaigns/${initialData.id}` : "/api/campaigns"
+      const method = initialData?.id ? "PATCH" : "POST"
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           project_id: projectId,
           name,
           objective,
@@ -115,14 +116,18 @@ export function CampaignForm({
           budget: budget ? Number.parseFloat(budget) : null,
           channels: selectedChannels,
           notes,
-          status: "draft",
-        })
-        .select()
-        .single()
+          status: initialData?.status || "draft",
+        }),
+      })
 
-      if (campaignError) throw campaignError
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || "Failed to save campaign")
+      }
 
-      // Insert campaign KOLs
+      const campaignData = await response.json()
+
+      // Handle campaign KOLs separately
       if (selectedKols.length > 0) {
         const kolsToInsert = selectedKols
           .filter((k) => k.kol_id && k.kol_channel_id)
@@ -135,18 +140,32 @@ export function CampaignForm({
           }))
 
         if (kolsToInsert.length > 0) {
-          const { error: kolsError } = await supabase.from("campaign_kols").insert(kolsToInsert)
-          if (kolsError) throw kolsError
+          // For update, delete existing campaign_kols first
+          if (initialData?.id) {
+            await fetch(`/api/campaigns/${initialData.id}/kols`, {
+              method: "DELETE",
+            })
+          }
+
+          // Insert new campaign KOLs
+          const kolsResponse = await fetch(`/api/campaigns/${campaignData.id}/kols`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kols: kolsToInsert }),
+          })
+
+          if (!kolsResponse.ok) {
+            const kolsData = await kolsResponse.json()
+            console.error("[v0] Error inserting campaign KOLs:", kolsData)
+            // Don't throw, just log the error
+          }
         }
       }
 
-      if (initialData?.id) {
-        router.push(`/dashboard/campaigns/${initialData.id}`)
-      } else {
-        router.push("/dashboard/campaigns")
-      }
+      router.push("/dashboard/campaigns")
       router.refresh()
     } catch (err: any) {
+      console.error("[v0] Error saving campaign:", err)
       setError(err.message)
     } finally {
       setIsLoading(false)

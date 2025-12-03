@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS public.comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   external_comment_id TEXT NOT NULL, -- Platform-specific comment ID
   post_id UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
+  post_link TEXT,
+  post_intention TEXT, -- Post intention/intent from imported comments
   
   author TEXT NOT NULL,
   text TEXT NOT NULL,
@@ -148,6 +150,8 @@ CREATE POLICY "Admins and analysts can delete comment tags"
 CREATE INDEX IF NOT EXISTS idx_tags_type ON public.tags(type);
 CREATE INDEX IF NOT EXISTS idx_comments_post_id ON public.comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_external_id ON public.comments(external_comment_id);
+CREATE INDEX IF NOT EXISTS idx_comments_post_link ON public.comments(post_link);
+CREATE INDEX IF NOT EXISTS idx_comments_post_intention ON public.comments(post_intention);
 CREATE INDEX IF NOT EXISTS idx_comments_timestamp ON public.comments(timestamp);
 CREATE INDEX IF NOT EXISTS idx_comments_parent ON public.comments(parent_comment_id);
 CREATE INDEX IF NOT EXISTS idx_comment_tags_comment_id ON public.comment_tags(comment_id);

@@ -1,10 +1,10 @@
 import { RateCardForm } from "@/components/rate-card-form"
-import { createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 
 export default async function NewRateCardPage() {
-  const supabase = await createServerClient()
+  const supabase = await createClient()
 
-  const { data: kols } = await supabase.from("kols").select("id, name, email").order("name")
+  const { data: kols } = await supabase.from("kols").select("id, name, contact_email").order("name")
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">

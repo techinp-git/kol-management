@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -33,7 +33,17 @@ import {
 
 type KOLStatus = "active" | "inactive" | "draft" | "ban"
 
-export function KOLDetailClient({ kol }: { kol: any }) {
+export function KOLDetailClient({ 
+  kol, 
+  postsByChannel = {}, 
+  totalPostsCount = 0, 
+  uniqueCampaignsCount = 0 
+}: { 
+  kol: any; 
+  postsByChannel?: Record<string, any[]>; 
+  totalPostsCount?: number; 
+  uniqueCampaignsCount?: number; 
+}) {
   const router = useRouter()
   const [currentStatus, setCurrentStatus] = useState<KOLStatus>(kol.status)
   const [newStatus, setNewStatus] = useState<KOLStatus>(kol.status)
@@ -43,6 +53,25 @@ export function KOLDetailClient({ kol }: { kol: any }) {
   const [memoText, setMemoText] = useState("")
   const [memoRating, setMemoRating] = useState(0)
   const [memoLogs, setMemoLogs] = useState<any[]>([])
+
+  // Fetch memo logs on component mount
+  useEffect(() => {
+    const fetchMemoLogs = async () => {
+      try {
+        const response = await fetch(`/api/kols/${kol.id}/memos`)
+        if (response.ok) {
+          const logs = await response.json()
+          setMemoLogs(logs || [])
+        } else {
+          console.error("[v0] Failed to fetch memo logs")
+        }
+      } catch (error) {
+        console.error("[v0] Error fetching memo logs:", error)
+      }
+    }
+
+    fetchMemoLogs()
+  }, [kol.id])
 
   const handleStatusChange = async () => {
     try {
@@ -67,6 +96,8 @@ export function KOLDetailClient({ kol }: { kol: any }) {
 
   const handleAddMemo = async () => {
     try {
+      console.log("[v0] Adding memo:", { memo: memoText, rating: memoRating })
+      
       const response = await fetch(`/api/kols/${kol.id}/memos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -76,15 +107,23 @@ export function KOLDetailClient({ kol }: { kol: any }) {
         }),
       })
 
-      if (!response.ok) throw new Error("Failed to add memo")
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error("[v0] Failed to add memo:", errorData)
+        alert(`เพิ่ม memo ไม่สำเร็จ: ${errorData.error || 'Unknown error'}`)
+        throw new Error(errorData.error || "Failed to add memo")
+      }
 
       const newMemo = await response.json()
+      console.log("[v0] Memo added successfully:", newMemo)
       setMemoLogs([newMemo, ...memoLogs])
       setMemoText("")
       setMemoRating(0)
       router.refresh()
-    } catch (error) {
+      alert("เพิ่ม memo สำเร็จ!")
+    } catch (error: any) {
       console.error("[v0] Error adding memo:", error)
+      console.error("[v0] Error message:", error.message)
     }
   }
 
@@ -181,6 +220,39 @@ export function KOLDetailClient({ kol }: { kol: any }) {
         </div>
       </div>
 
+      {/* Summary Statistics */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">จำนวนโพสต์</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{totalPostsCount.toLocaleString()}</p>
+            <Link href={`/dashboard/posts?kol_id=${kol.id}`}>
+              <p className="text-xs text-muted-foreground mt-1 hover:underline">ดูโพสต์ทั้งหมด</p>
+            </Link>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">จำนวนแคมเปญ</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{uniqueCampaignsCount.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground mt-1">แคมเปญที่เกี่ยวข้อง</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">จำนวนช่องทาง</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold">{(kol.kol_channels?.length || 0).toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground mt-1">ช่องทางโซเชียลมีเดีย</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid gap-6 md:grid-cols-3">
         <Card className="md:col-span-2">
           <CardHeader>
@@ -257,6 +329,18 @@ export function KOLDetailClient({ kol }: { kol: any }) {
                     </DialogContent>
                   </Dialog>
                 </div>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Tier</p>
+                <p className="text-lg font-semibold">{kol.kol_tier || "ไม่ระบุ"}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">จำนวนโพสต์</p>
+                <p className="text-lg font-semibold">{totalPostsCount.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">จำนวนแคมเปญ</p>
+                <p className="text-lg font-semibold">{uniqueCampaignsCount.toLocaleString()}</p>
               </div>
             </div>
 
@@ -450,6 +534,132 @@ export function KOLDetailClient({ kol }: { kol: any }) {
                         )}
                       </div>
                     </div>
+
+                    {/* ประวัติผู้ติดตามแยกตามช่องทาง */}
+                    {channel.follower_history && Array.isArray(channel.follower_history) && channel.follower_history.length > 0 && (
+                      <div className="border-t pt-4 mt-4">
+                        <h4 className="mb-3 text-sm font-semibold">ประวัติผู้ติดตาม</h4>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {(() => {
+                            // Sort history by date descending (newest first)
+                            const sortedHistory = [...channel.follower_history].sort((a: any, b: any) => {
+                              const dateA = new Date(a.date).getTime()
+                              const dateB = new Date(b.date).getTime()
+                              return dateB - dateA
+                            })
+
+                            return sortedHistory.map((history: any, index: number) => {
+                              // Calculate change from previous entry (index+1 is previous in sorted desc order)
+                              const prevHistory = sortedHistory[index + 1]
+                              const change = prevHistory
+                                ? history.follower_count - prevHistory.follower_count
+                                : 0
+
+                              return (
+                                <div
+                                  key={index}
+                                  className="flex items-center justify-between rounded-lg border bg-muted/30 p-3"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="text-sm">
+                                      <p className="font-medium">
+                                        {new Date(history.date).toLocaleDateString("th-TH", {
+                                          year: "numeric",
+                                          month: "short",
+                                          day: "numeric",
+                                        })}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {new Date(history.date).toLocaleDateString("th-TH", {
+                                          weekday: "long",
+                                        })}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-4">
+                                    <div className="text-right">
+                                      <p className="font-semibold">{history.follower_count?.toLocaleString() || 0}</p>
+                                      {change !== 0 && (
+                                        <p className={`text-xs ${change > 0 ? "text-green-500" : "text-red-500"}`}>
+                                          {change > 0 ? "+" : ""}
+                                          {change.toLocaleString()}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })
+                          })()}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* แสดงโพสต์ของช่องทางนี้ */}
+                    {(() => {
+                      const channelPosts = postsByChannel[channel.id] || []
+                      if (channelPosts.length === 0) return null
+
+                      return (
+                        <div className="border-t pt-4 mt-4">
+                          <div className="mb-3 flex items-center justify-between">
+                            <h4 className="text-sm font-semibold">โพสต์ ({channelPosts.length})</h4>
+                            <Link href={`/dashboard/posts?kol_channel_id=${channel.id}`}>
+                              <Button size="sm" variant="outline" className="h-7 text-xs">
+                                ดูทั้งหมด
+                              </Button>
+                            </Link>
+                          </div>
+                          <div className="space-y-2 max-h-96 overflow-y-auto">
+                            {channelPosts.slice(0, 10).map((post: any) => (
+                              <Link
+                                key={post.id}
+                                href={`/dashboard/posts/${post.id}`}
+                                className="block rounded-lg border bg-muted/30 p-3 transition-colors hover:bg-muted/50"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium truncate">{post.post_name || "ไม่มีชื่อ"}</p>
+                                    {post.posted_at && (
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        {new Date(post.posted_at).toLocaleDateString("th-TH", {
+                                          year: "numeric",
+                                          month: "short",
+                                          day: "numeric",
+                                        })}
+                                      </p>
+                                    )}
+                                    {post.campaigns && (
+                                      <p className="text-xs text-muted-foreground">
+                                        แคมเปญ: {post.campaigns.name}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {post.content_type && (
+                                      <Badge variant="outline" className="text-xs">
+                                        {post.content_type}
+                                      </Badge>
+                                    )}
+                                    <Badge
+                                      variant={post.status === "published" ? "default" : "secondary"}
+                                      className="text-xs"
+                                    >
+                                      {post.status === "published" ? "เผยแพร่" : post.status || "รอดำเนินการ"}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </Link>
+                            ))}
+                            {channelPosts.length > 10 && (
+                              <p className="text-xs text-center text-muted-foreground pt-2">
+                                แสดง 10 จาก {channelPosts.length} โพสต์
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </CardContent>
                 </Card>
               ))}

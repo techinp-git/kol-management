@@ -76,18 +76,44 @@ export function AccountForm() {
     setError(null)
 
     try {
-      console.log("[v0] Saving account with social channels:", {
+      const payload = {
         name,
         company_name: companyName,
-        social_channels: socialChannels,
+        tax_id: taxId,
+        billing_address: billingAddress,
+        primary_contact_name: primaryContactName,
+        primary_contact_email: primaryContactEmail,
+        primary_contact_phone: primaryContactPhone,
+        currency,
+        credit_terms: Number.parseInt(creditTerms) || 30,
+        status: "active",
+        notes,
+        social_channels: socialChannels.map((ch) => ({
+          channel_type: ch.channel_type,
+          handle: ch.handle,
+          profile_url: ch.profile_url,
+          follower_count: ch.follower_count,
+          verified: ch.verified,
+        })),
+      }
+
+      console.log("[v0] Saving account with social channels:", payload)
+
+      const response = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       })
 
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || "Failed to save account")
+      }
 
       router.push("/dashboard/accounts")
       router.refresh()
     } catch (err: any) {
+      console.error("[v0] Error saving account:", err)
       setError(err.message)
     } finally {
       setIsLoading(false)

@@ -1,10 +1,10 @@
 import { RateCardForm } from "@/components/rate-card-form"
-import { createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 import { notFound } from "next/navigation"
 
 export default async function EditRateCardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const supabase = await createServerClient()
+  const supabase = await createClient()
 
   const [{ data: rateCard }, { data: kols }] = await Promise.all([
     supabase
@@ -15,7 +15,7 @@ export default async function EditRateCardPage({ params }: { params: Promise<{ i
       `)
       .eq("id", id)
       .single(),
-    supabase.from("kols").select("id, name, email").order("name"),
+    supabase.from("kols").select("id, name, contact_email").order("name"),
   ])
 
   if (!rateCard) {
@@ -24,17 +24,17 @@ export default async function EditRateCardPage({ params }: { params: Promise<{ i
 
   const initialData = {
     kol_id: rateCard.kol_id,
-    name: rateCard.name,
-    description: rateCard.description || "",
+    version: rateCard.version,
+    notes: rateCard.notes || "",
     effective_from: rateCard.effective_from,
     effective_to: rateCard.effective_to || "",
-    status: rateCard.status,
+    currency: rateCard.currency || "THB",
     rate_items:
       rateCard.rate_items?.map((item: any) => ({
-        post_type: item.post_type,
-        price: item.price.toString(),
-        currency: item.currency,
-        description: item.description || "",
+        channel_type: item.channel_type,
+        content_type: item.content_type,
+        base_rate: item.base_rate.toString(),
+        addons: item.addons || {},
       })) || [],
   }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm, useFieldArray } from "react-hook-form"
@@ -11,9 +11,10 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { createBrowserClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
-import { Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2, Search, User } from "lucide-react"
 
 const rateItemSchema = z.object({
   post_type: z.string().min(1, "กรุณาระบุประเภทโพสต์"),
@@ -35,7 +36,7 @@ const formSchema = z.object({
 type FormValues = z.infer<typeof formSchema>
 
 interface RateCardFormProps {
-  kols: Array<{ id: string; name: string; email: string }>
+  kols: Array<{ id: string; name: string; contact_email?: string; email?: string }>
   initialData?: any
   rateCardId?: string
 }
@@ -43,6 +44,8 @@ interface RateCardFormProps {
 export function RateCardForm({ kols, initialData, rateCardId }: RateCardFormProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
+  const [isKolDialogOpen, setIsKolDialogOpen] = useState(false)
+  const [kolSearchTerm, setKolSearchTerm] = useState("")
   const supabase = createBrowserClient()
 
   const form = useForm<FormValues>({
@@ -62,6 +65,23 @@ export function RateCardForm({ kols, initialData, rateCardId }: RateCardFormProp
     control: form.control,
     name: "rate_items",
   })
+
+  // Filter KOLs based on search term
+  const filteredKols = useMemo(() => {
+    if (!kolSearchTerm) return kols
+    const searchLower = kolSearchTerm.toLowerCase()
+    return kols.filter(
+      (kol) =>
+        kol.name.toLowerCase().includes(searchLower) ||
+        (kol.contact_email || kol.email || "").toLowerCase().includes(searchLower)
+    )
+  }, [kols, kolSearchTerm])
+
+  // Get selected KOL name for display
+  const selectedKol = useMemo(() => {
+    const kolId = form.watch("kol_id")
+    return kols.find((k) => k.id === kolId)
+  }, [kols, form.watch("kol_id")])
 
   async function onSubmit(values: FormValues) {
     setIsLoading(true)
@@ -141,20 +161,72 @@ export function RateCardForm({ kols, initialData, rateCardId }: RateCardFormProp
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>KOL</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="เลือก KOL" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {kols.map((kol) => (
-                        <SelectItem key={kol.id} value={kol.id}>
-                          {kol.name} ({kol.email})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormControl>
+                    <Dialog open={isKolDialogOpen} onOpenChange={setIsKolDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-start text-left font-normal"
+                        >
+                          <User className="mr-2 h-4 w-4" />
+                          {selectedKol ? (
+                            <span>
+                              {selectedKol.name} ({selectedKol.contact_email || selectedKol.email || "ไม่มีอีเมล"})
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">เลือก KOL</span>
+                          )}
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+                        <DialogHeader>
+                          <DialogTitle>เลือก KOL</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              placeholder="ค้นหา KOL..."
+                              value={kolSearchTerm}
+                              onChange={(e) => setKolSearchTerm(e.target.value)}
+                              className="pl-10"
+                            />
+                          </div>
+                          <div className="flex-1 overflow-y-auto border rounded-md">
+                            {filteredKols.length > 0 ? (
+                              <div className="divide-y">
+                                {filteredKols.map((kol) => (
+                                  <button
+                                    key={kol.id}
+                                    type="button"
+                                    onClick={() => {
+                                      field.onChange(kol.id)
+                                      setIsKolDialogOpen(false)
+                                      setKolSearchTerm("")
+                                    }}
+                                    className="w-full px-4 py-3 text-left hover:bg-muted transition-colors"
+                                  >
+                                    <div className="font-medium">{kol.name}</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {kol.contact_email || kol.email || "ไม่มีอีเมล"}
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="p-8 text-center text-muted-foreground">
+                                ไม่พบ KOL ที่ค้นหา
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            พบ {filteredKols.length} รายการ
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

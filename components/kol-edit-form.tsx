@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -30,10 +30,23 @@ export function KOLEditForm({ kol }: { kol: any }) {
   const [contactPhone, setContactPhone] = useState(kol.contact_phone || "")
   const [bio, setBio] = useState(kol.bio || "")
   const [notes, setNotes] = useState(kol.notes || "")
+  const [kolTier, setKolTier] = useState(kol.kol_tier || "")
   const [status, setStatus] = useState(kol.status || "active")
 
   // Channels - include existing channels with history
-  const [channels, setChannels] = useState<any[]>(kol.kol_channels || [])
+  // Map follower_history from database to history for form
+  const mappedChannels = (kol.kol_channels || []).map((channel: any) => ({
+    ...channel,
+    history: channel.follower_history && Array.isArray(channel.follower_history)
+      ? channel.follower_history
+      : [],
+  }))
+  const [channels, setChannels] = useState<any[]>(mappedChannels)
+
+  // Debug: Log channels state changes
+  useEffect(() => {
+    console.log("[v0] Channels state updated:", channels.length, "channels")
+  }, [channels])
 
   const addCategory = (category: string) => {
     if (!selectedCategories.includes(category)) {
@@ -46,22 +59,21 @@ export function KOLEditForm({ kol }: { kol: any }) {
   }
 
   const addChannel = () => {
-    setChannels([
-      ...channels,
-      {
-        channel_type: "instagram",
-        handle: "",
-        profile_url: "",
-        follower_count: 0,
-        status: "active",
-        history: [
-          {
-            date: new Date().toISOString().split("T")[0],
-            follower_count: 0,
-          },
-        ],
-      },
-    ])
+    console.log("[v0] addChannel called")
+    console.log("[v0] Current channels:", channels)
+    const newChannel = {
+      channel_type: "instagram",
+      handle: "",
+      profile_url: "",
+      follower_count: 0,
+      status: "active",
+      history: [],
+      _tempId: `temp-${Date.now()}-${Math.random()}`, // Temporary unique ID for new channels
+    }
+    console.log("[v0] New channel to add:", newChannel)
+    const updatedChannels = [...channels, newChannel]
+    console.log("[v0] Updated channels array:", updatedChannels)
+    setChannels(updatedChannels)
   }
 
   const removeChannel = (index: number) => {
@@ -110,32 +122,44 @@ export function KOLEditForm({ kol }: { kol: any }) {
     setError(null)
 
     try {
+      console.log("[v0] Updating KOL with channels:", channels)
+      
+      const payload = {
+        name,
+        handle,
+        category: selectedCategories,
+        country,
+        contact_email: contactEmail,
+        contact_phone: contactPhone,
+        bio,
+        notes,
+        kol_tier: kolTier ? kolTier.trim() : null,
+        status,
+        channels,
+      }
+      
+      console.log("[v0] Payload:", JSON.stringify(payload, null, 2))
+
       const response = await fetch(`/api/kols/${kol.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          handle,
-          category: selectedCategories,
-          country,
-          contact_email: contactEmail,
-          contact_phone: contactPhone,
-          bio,
-          notes,
-          status,
-          channels,
-        }),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
         const data = await response.json()
+        console.error("[v0] Error response:", data)
         throw new Error(data.error || "Failed to update KOL")
       }
+
+      const data = await response.json()
+      console.log("[v0] KOL updated successfully:", data)
 
       // Redirect to list page after successful update
       router.push("/dashboard/kols")
       router.refresh()
     } catch (err: any) {
+      console.error("[v0] Error in handleSubmit:", err)
       setError(err.message)
     } finally {
       setIsLoading(false)
@@ -157,6 +181,15 @@ export function KOLEditForm({ kol }: { kol: any }) {
             <div className="space-y-2">
               <Label htmlFor="handle">Handle</Label>
               <Input id="handle" placeholder="@username" value={handle} onChange={(e) => setHandle(e.target.value)} />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="kolTier">Tier</Label>
+              <Input
+                id="kolTier"
+                placeholder="เช่น Mega / Macro / Micro"
+                value={kolTier}
+                onChange={(e) => setKolTier(e.target.value)}
+              />
             </div>
           </div>
 
@@ -245,7 +278,7 @@ export function KOLEditForm({ kol }: { kol: any }) {
             <p className="text-center text-sm text-muted-foreground">ยังไม่มีช่องทาง คลิกปุ่มด้านบนเพื่อเพิ่ม</p>
           ) : (
             channels.map((channel, index) => (
-              <Card key={channel.id || index}>
+              <Card key={channel.id || channel._tempId || `new-channel-${index}`}>
                 <CardContent className="space-y-4 pt-6">
                   <div className="flex items-start justify-between">
                     <div className="grid flex-1 gap-4 md:grid-cols-2">

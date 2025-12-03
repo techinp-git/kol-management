@@ -38,7 +38,9 @@ export async function updateSession(request: NextRequest) {
   // Redirect to login if not authenticated (except for auth pages)
   if (!user && !request.nextUrl.pathname.startsWith("/auth") && request.nextUrl.pathname !== "/") {
     const url = request.nextUrl.clone()
+    const originalUrl = request.nextUrl.pathname + request.nextUrl.search
     url.pathname = "/auth/login"
+    url.searchParams.set("redirectTo", originalUrl)
     return NextResponse.redirect(url)
   }
 

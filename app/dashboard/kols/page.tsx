@@ -1,47 +1,28 @@
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Plus, Search, Pencil } from "lucide-react"
+import { Plus } from "lucide-react"
 import Link from "next/link"
-import { Input } from "@/components/ui/input"
 import { createClient } from "@/lib/supabase/server"
+import { KOLsListClient } from "@/components/kols-list-client"
+import { Suspense } from "react"
 
-type KOLStatus = "active" | "inactive" | "draft" | "ban"
-
-const getStatusBadgeVariant = (status: KOLStatus) => {
-  switch (status) {
-    case "active":
-      return "default"
-    case "inactive":
-      return "secondary"
-    case "draft":
-      return "outline"
-    case "ban":
-      return "destructive"
-    default:
-      return "secondary"
-  }
+type KOLsPageProps = {
+  searchParams?: Promise<{
+    page?: string
+  }>
 }
 
-const getStatusLabel = (status: KOLStatus) => {
-  switch (status) {
-    case "active":
-      return "ใช้งาน"
-    case "inactive":
-      return "ไม่ใช้งาน"
-    case "draft":
-      return "แบบร่าง"
-    case "ban":
-      return "ระงับ"
-    default:
-      return status
-  }
-}
-
-export default async function KOLsPage() {
+export default async function KOLsPage({ searchParams }: KOLsPageProps) {
   const supabase = await createClient()
+  const resolvedSearchParams = await searchParams
+  const rawPage = Number(resolvedSearchParams?.page ?? 1)
+  const currentPage = Math.max(1, rawPage)
+  const itemsPerPage = 25
 
-  const { data: kols, error } = await supabase
+  console.log("[v0] KOLs page - currentPage:", currentPage)
+
+  // Fetch ALL KOLs for client-side search and pagination
+  // Try to fetch with follower_history first, fallback to without it if column doesn't exist
+  let { data: allKols, error } = await supabase
     .from("kols")
     .select(`
       *,
@@ -50,97 +31,74 @@ export default async function KOLsPage() {
         channel_type,
         handle,
         follower_count,
-        engagement_rate
+        engagement_rate,
+        follower_history
       )
     `)
     .order("created_at", { ascending: false })
+
+  // If error is due to missing column, try again without follower_history
+  if (error && (error.code === "42703" || error.message?.includes("column") || error.message?.includes("follower_history"))) {
+    console.warn("[v0] follower_history column not found, fetching without it:", error.message)
+    const result = await supabase
+      .from("kols")
+      .select(`
+        *,
+        kol_channels (
+          id,
+          channel_type,
+          handle,
+          follower_count,
+          engagement_rate
+        )
+      `)
+      .order("created_at", { ascending: false })
+    
+    allKols = result.data
+    error = result.error
+    
+    // Set follower_history to empty array for all channels if column doesn't exist
+    if (allKols) {
+      allKols = allKols.map((kol: any) => ({
+        ...kol,
+        kol_channels: kol.kol_channels?.map((channel: any) => ({
+          ...channel,
+          follower_history: [],
+        })) || [],
+      }))
+    }
+  }
 
   if (error) {
     console.error("[v0] Error fetching KOLs:", error)
   }
 
+  const totalCount = allKols?.length || 0
+
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">KOL</h1>
-          <p className="text-muted-foreground">จัดการข้อมูล KOL และช่องทางโซเชียลมีเดีย</p>
+          <p className="text-muted-foreground mt-1">จัดการข้อมูล KOL และช่องทางโซเชียลมีเดีย</p>
         </div>
         <Link href="/dashboard/kols/new">
-          <Button>
+          <Button className="bg-black text-[#FFFF00] hover:bg-black/90">
             <Plus className="mr-2 h-4 w-4" />
             เพิ่ม KOL
           </Button>
         </Link>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="ค้นหา KOL..." className="pl-9" />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {!kols || kols.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">ยังไม่มี KOL ในระบบ</p>
-              <Link href="/dashboard/kols/new">
-                <Button className="mt-4">
-                  <Plus className="mr-2 h-4 w-4" />
-                  เพิ่ม KOL แรก
-                </Button>
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {kols.map((kol) => (
-                <Card key={kol.id} className="transition-colors hover:bg-accent">
-                  <CardContent className="flex items-center justify-between p-6">
-                    <Link href={`/dashboard/kols/${kol.id}`} className="flex items-center gap-4 flex-1">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">
-                        {kol.name.charAt(0)}
-                      </div>
-                      <div>
-                        <h3 className="font-semibold">{kol.name}</h3>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          {kol.handle && (
-                            <>
-                              <span>@{kol.handle}</span>
-                              <span>•</span>
-                            </>
-                          )}
-                          {kol.category && Array.isArray(kol.category) && <span>{kol.category.join(", ")}</span>}
-                        </div>
-                      </div>
-                    </Link>
-                    <div className="flex items-center gap-4">
-                      <div className="flex gap-2">
-                        {kol.kol_channels?.slice(0, 3).map((channel: any) => (
-                          <Badge key={channel.id} variant="secondary">
-                            {channel.channel_type}
-                          </Badge>
-                        ))}
-                        {kol.kol_channels && kol.kol_channels.length > 3 && (
-                          <Badge variant="secondary">+{kol.kol_channels.length - 3}</Badge>
-                        )}
-                      </div>
-                      <Badge variant={getStatusBadgeVariant(kol.status)}>{getStatusLabel(kol.status)}</Badge>
-                      <Link href={`/dashboard/kols/${kol.id}/edit`}>
-                        <Button variant="ghost" size="sm">
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                      </Link>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <KOLsListClient 
+        initialKOLs={allKols || []} 
+        currentPage={currentPage}
+        totalPages={Math.ceil(totalCount / itemsPerPage)}
+        totalCount={totalCount}
+        itemsPerPage={itemsPerPage}
+        useClientSideSearch={true}
+      />
     </div>
   )
 }

@@ -1,91 +1,64 @@
 "use client"
+
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { FileText, MessageSquare, Download } from "lucide-react"
-import { MetricsImport } from "@/components/metrics-import"
-import { CommentsImport } from "@/components/comments-import"
+import { Info, FileText, MessageSquare } from "lucide-react"
+
+const importOptions = [
+  {
+    title: "นำเข้า Post Information",
+    description: "รายละเอียดโพสต์, URL, Post ID, งบประมาณ และ remark ต่าง ๆ",
+    href: "/dashboard/import/post-info",
+    icon: Info,
+  },
+  {
+    title: "นำเข้า Post Metrics",
+    description: "สถิติ impressions, reach, engagement, clicks และ views ของโพสต์",
+    href: "/dashboard/import/post-metrics",
+    icon: FileText,
+  },
+  {
+    title: "นำเข้า Post Comments",
+    description: "คอมเมนต์, ผู้เขียน, เวลา, จำนวนไลก์ และแท็กของโพสต์",
+    href: "/dashboard/import/post-comments",
+    icon: MessageSquare,
+  },
+]
 
 export default function ImportPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">นำเข้าข้อมูล</h1>
-        <p className="text-muted-foreground">นำเข้าข้อมูล Engagement Metrics และ Comments จากไฟล์ CSV หรือ JSON</p>
+        <h1 className="text-3xl font-bold">ศูนย์นำเข้าข้อมูล</h1>
+        <p className="text-muted-foreground">
+          เลือกประเภทข้อมูลที่ต้องการนำเข้า ระบบจะแสดงฟอร์มและรูปแบบไฟล์ตัวอย่างสำหรับแต่ละรายการ
+        </p>
       </div>
 
-      <Tabs defaultValue="metrics" className="space-y-6">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="metrics" className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            Engagement Metrics
-          </TabsTrigger>
-          <TabsTrigger value="comments" className="flex items-center gap-2">
-            <MessageSquare className="h-4 w-4" />
-            Comments
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="metrics" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>นำเข้า Engagement Metrics</CardTitle>
-              <CardDescription>อัปโหลดไฟล์ CSV หรือ JSON ที่มีข้อมูล Engagement Metrics ของโพสต์</CardDescription>
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+        {importOptions.map((option) => {
+          const Icon = option.icon
+          return (
+            <Card key={option.href} className="flex h-full flex-col border border-gray-200 shadow-sm">
+              <CardHeader className="flex flex-row items-start gap-3">
+                <div className="rounded-md bg-black p-2 text-[#FFFF00]">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle>{option.title}</CardTitle>
+                  <CardDescription>{option.description}</CardDescription>
+                </div>
             </CardHeader>
-            <CardContent>
-              <MetricsImport />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>รูปแบบไฟล์ CSV</CardTitle>
-              <CardDescription>ตัวอย่างรูปแบบไฟล์ CSV สำหรับนำเข้า Metrics</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-lg bg-muted p-4 font-mono text-sm">
-                <div>external_post_id,recorded_at,likes,comments,shares,views,reach,impressions</div>
-                <div>POST123,2024-01-15T10:00:00Z,1500,250,80,50000,45000,60000</div>
-                <div>POST456,2024-01-15T10:00:00Z,2300,180,120,75000,68000,85000</div>
-              </div>
-              <Button variant="outline" className="w-full bg-transparent">
-                <Download className="mr-2 h-4 w-4" />
-                ดาวน์โหลดไฟล์ตัวอย่าง
+              <CardContent className="mt-auto">
+                <Button asChild className="w-full">
+                  <Link href={option.href}>ไปที่หน้า {option.title}</Link>
               </Button>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="comments" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>นำเข้า Comments</CardTitle>
-              <CardDescription>อัปโหลดไฟล์ CSV หรือ JSON ที่มีข้อมูล Comments ของโพสต์</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <CommentsImport />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>รูปแบบไฟล์ CSV</CardTitle>
-              <CardDescription>ตัวอย่างรูปแบบไฟล์ CSV สำหรับนำเข้า Comments</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-lg bg-muted p-4 font-mono text-sm">
-                <div>external_post_id,external_comment_id,author_name,content,created_at,likes,sentiment,tags</div>
-                <div>POST123,CMT001,John Doe,Great product!,2024-01-15T10:30:00Z,15,positive,product;quality</div>
-                <div>POST123,CMT002,Jane Smith,Love it,2024-01-15T11:00:00Z,8,positive,love</div>
+          )
+        })}
               </div>
-              <Button variant="outline" className="w-full bg-transparent">
-                <Download className="mr-2 h-4 w-4" />
-                ดาวน์โหลดไฟล์ตัวอย่าง
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
     </div>
   )
 }

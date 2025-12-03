@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS public.posts (
 CREATE TABLE IF NOT EXISTS public.post_metrics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   post_id UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
+  post_link TEXT,
   captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   
   -- Engagement metrics

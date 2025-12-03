@@ -1,4 +1,4 @@
-import { createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -8,13 +8,13 @@ import { notFound } from "next/navigation"
 
 export default async function RateCardDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const supabase = await createServerClient()
+  const supabase = await createClient()
 
   const { data: rateCard, error } = await supabase
     .from("rate_cards")
     .select(`
       *,
-      kol:kols(id, name, email),
+      kol:kols(id, name, contact_email),
       rate_items(*)
     `)
     .eq("id", id)
@@ -22,6 +22,32 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
 
   if (error || !rateCard) {
     notFound()
+  }
+
+  // Calculate status based on effective dates
+  const getStatus = (effectiveFrom: string, effectiveTo: string | null) => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const from = new Date(effectiveFrom)
+    from.setHours(0, 0, 0, 0)
+    
+    if (effectiveTo) {
+      const to = new Date(effectiveTo)
+      to.setHours(0, 0, 0, 0)
+      if (to < today) {
+        return "expired"
+      }
+      if (from > today) {
+        return "draft"
+      }
+      return "active"
+    }
+    
+    // No end date means active
+    if (from > today) {
+      return "draft"
+    }
+    return "active"
   }
 
   const getStatusBadge = (status: string) => {
@@ -45,15 +71,20 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
     }).format(amount)
   }
 
+  const status = getStatus(rateCard.effective_from, rateCard.effective_to)
+  const cardName = rateCard.kol?.name 
+    ? `${rateCard.kol.name} - เวอร์ชัน ${rateCard.version}`
+    : `Rate Card เวอร์ชัน ${rateCard.version}`
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">{rateCard.name}</h1>
-            {getStatusBadge(rateCard.status)}
+            <h1 className="text-3xl font-bold">{cardName}</h1>
+            {getStatusBadge(status)}
           </div>
-          {rateCard.description && <p className="text-muted-foreground">{rateCard.description}</p>}
+          {rateCard.notes && <p className="text-muted-foreground">{rateCard.notes}</p>}
         </div>
         <Button asChild>
           <Link href={`/dashboard/rate-cards/${id}/edit`}>
@@ -72,8 +103,10 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
             <div className="flex items-center gap-2">
               <User className="h-4 w-4 text-muted-foreground" />
               <div>
-                <p className="font-medium">{rateCard.kol?.name}</p>
-                <p className="text-sm text-muted-foreground">{rateCard.kol?.email}</p>
+                <p className="font-medium">{rateCard.kol?.name || "ไม่ระบุ KOL"}</p>
+                {rateCard.kol?.contact_email && (
+                  <p className="text-sm text-muted-foreground">{rateCard.kol.contact_email}</p>
+                )}
               </div>
             </div>
             <Button asChild variant="outline" size="sm" className="w-full bg-transparent">
@@ -133,11 +166,17 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <DollarSign className="h-4 w-4 text-muted-foreground" />
-                        <p className="font-medium capitalize">{item.post_type}</p>
+                        <p className="font-medium capitalize">
+                          {item.channel_type} - {item.content_type}
+                        </p>
                       </div>
-                      {item.description && <p className="text-sm text-muted-foreground">{item.description}</p>}
+                      {item.addons && Object.keys(item.addons).length > 0 && (
+                        <p className="text-sm text-muted-foreground">
+                          Add-ons: {Object.keys(item.addons).join(", ")}
+                        </p>
+                      )}
                     </div>
-                    <p className="text-xl font-bold">{formatCurrency(item.price, item.currency)}</p>
+                    <p className="text-xl font-bold">{formatCurrency(parseFloat(item.base_rate), rateCard.currency || "THB")}</p>
                   </div>
                 </CardContent>
               </Card>
