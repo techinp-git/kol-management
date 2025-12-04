@@ -169,7 +169,7 @@ export default function BestPerformingKOLsDashboard({
   // Fetch and process data
   const fetchBestPerformingData = useCallback(async () => {
     if (!selectedAccount) {
-      setError("กรุณาเลือก Account ก่อน")
+      setError(null)
       setTop5KOLs([])
       setSortingTableData([])
       return
@@ -679,6 +679,20 @@ export default function BestPerformingKOLsDashboard({
           </div>
         </CardContent>
       </Card>
+
+      {/* Info message when no account selected */}
+      {!selectedAccount && !loading && (
+        <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+          <CardHeader>
+            <CardTitle className="text-blue-900 dark:text-blue-100">กรุณาเลือก Account</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              กรุณาเลือก Account เพื่อดูข้อมูล Best Performing KOLs
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {error && (
         <Card className="border-destructive">

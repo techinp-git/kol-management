@@ -25,8 +25,6 @@ import {
   Smile,
   Meh,
   Frown,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 
@@ -75,8 +73,6 @@ export function KOLPerformanceDashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [debugInfo, setDebugInfo] = useState<any>(null)
-  const [isDebugExpanded, setIsDebugExpanded] = useState(false)
 
   const supabase = createClient()
 
@@ -153,7 +149,6 @@ export function KOLPerformanceDashboard() {
   async function fetchDashboardData() {
     setLoading(true)
     setError(null)
-    setDebugInfo(null)
     
     try {
       console.log("[Dashboard] Starting fetch with filters:", {
@@ -165,7 +160,7 @@ export function KOLPerformanceDashboard() {
       // Check if account is selected
       if (!selectedAccount || selectedAccount === "" || selectedAccount === "all") {
         console.warn("[Dashboard] No account selected")
-        setError("กรุณาเลือก Account ก่อน")
+        setError(null)
         setDashboardData(null)
         setLoading(false)
         return
@@ -623,40 +618,6 @@ export function KOLPerformanceDashboard() {
       const cpv = totalViews > 0 ? totalCost / totalViews : 0
       const er = totalReach > 0 ? (totalEngagement / totalReach) * 100 : 0
 
-      // Set debug info
-      setDebugInfo({
-        campaignsFound: campaignsData.length,
-        campaignIds,
-        campaignKolsFound: campaignKolsData?.length || 0,
-        kolChannelsFound: kolChannelIds.length,
-        queryMethod: useDirectCampaignQuery ? "direct_by_campaign_id" : "by_kol_channel_id",
-        postsFound: posts.length,
-        postsWithMetrics: postsWithMetrics,
-        commentsFound: comments.length,
-        totalCost,
-        metricsDetails: {
-          totalImpressions,
-          totalReach,
-          totalViews,
-          totalEngagement,
-          avgCTR: avgCTR.toFixed(2),
-          avgER: avgER.toFixed(2),
-        },
-        sampleData: {
-          firstPost: posts[0] ? {
-            id: posts[0].id,
-            campaign_id: posts[0].campaign_id,
-            hasMetrics: !!posts[0].post_metrics?.length,
-            metricsCount: posts[0].post_metrics?.length || 0,
-            latestMetric: posts[0].post_metrics?.[0] ? {
-              impressions: posts[0].post_metrics[0].impressions,
-              reach: posts[0].post_metrics[0].reach,
-              likes: posts[0].post_metrics[0].likes,
-            } : null,
-          } : null,
-        },
-      })
-
       console.log("[Dashboard] Final metrics:", {
         totalPosts,
         totalFollowers,
@@ -797,6 +758,20 @@ export function KOLPerformanceDashboard() {
         </CardContent>
       </Card>
 
+      {/* Info message when no account selected */}
+      {!selectedAccount && !loading && (
+        <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+          <CardHeader>
+            <CardTitle className="text-blue-900 dark:text-blue-100">กรุณาเลือก Account</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              กรุณาเลือก Account เพื่อดูข้อมูล Sentiment by KOL
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {error && (
         <Card className="border-destructive">
           <CardHeader>
@@ -805,70 +780,6 @@ export function KOLPerformanceDashboard() {
           <CardContent>
             <p className="text-sm text-destructive">{error}</p>
           </CardContent>
-        </Card>
-      )}
-
-      {debugInfo && (
-        <Card className="border-blue-200 bg-blue-50/50">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xs font-medium text-muted-foreground">Debug Info</CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => setIsDebugExpanded(!isDebugExpanded)}
-              >
-                {isDebugExpanded ? (
-                  <>
-                    <ChevronUp className="h-3 w-3 mr-1" />
-                    ย่อ
-                  </>
-                ) : (
-                  <>
-                    <ChevronDown className="h-3 w-3 mr-1" />
-                    ขยาย
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardHeader>
-          {isDebugExpanded && (
-            <CardContent className="pt-0">
-              <div className="text-xs space-y-2 text-muted-foreground">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <p className="font-semibold text-foreground">Filter:</p>
-                    <p>Campaigns: {debugInfo.campaignsFound}</p>
-                    <p>KOL Channels: {debugInfo.kolChannelsFound}</p>
-                    <p>Method: {debugInfo.queryMethod || "unknown"}</p>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-foreground">Data:</p>
-                    <p>Posts: {debugInfo.postsFound}</p>
-                    <p>With Metrics: {debugInfo.postsWithMetrics}</p>
-                    <p>Comments: {debugInfo.commentsFound}</p>
-                  </div>
-                </div>
-                {debugInfo.metricsDetails && (
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t">
-                    <div>
-                      <p className="font-semibold text-foreground">Metrics:</p>
-                      <p>Impressions: {debugInfo.metricsDetails.totalImpressions.toLocaleString()}</p>
-                      <p>Reach: {debugInfo.metricsDetails.totalReach.toLocaleString()}</p>
-                      <p>Engagement: {debugInfo.metricsDetails.totalEngagement.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="font-semibold text-foreground">Averages:</p>
-                      <p>CTR: {debugInfo.metricsDetails.avgCTR}%</p>
-                      <p>ER: {debugInfo.metricsDetails.avgER}%</p>
-                      <p>Cost: {debugInfo.totalCost.toLocaleString()} THB</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          )}
         </Card>
       )}
 
