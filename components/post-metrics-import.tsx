@@ -141,6 +141,147 @@ const toDateOnly = (value?: string) => {
   return `${year}-${month}-${day}`
 }
 
+// Validate date format (YYYY-MM-DD or common date formats)
+const validateDateFormat = (dateStr: string): { isValid: boolean; error?: string } => {
+  if (!dateStr || !dateStr.trim()) {
+    return { isValid: false, error: "วันที่ว่างเปล่า" }
+  }
+
+  const trimmed = dateStr.trim()
+
+  // Check for common date formats
+  // YYYY-MM-DD
+  const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/
+  // DD/MM/YYYY or DD-MM-YYYY
+  const dmyPattern = /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/
+  // MM/DD/YYYY or MM-DD-YYYY
+  const mdyPattern = /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/
+
+  if (isoDatePattern.test(trimmed)) {
+    // Validate ISO date
+    const parsed = new Date(trimmed + "T00:00:00")
+    if (Number.isNaN(parsed.getTime())) {
+      return { isValid: false, error: `รูปแบบวันที่ไม่ถูกต้อง: ${trimmed} (กรุณาใช้รูปแบบ YYYY-MM-DD)` }
+    }
+    return { isValid: true }
+  } else if (dmyPattern.test(trimmed) || mdyPattern.test(trimmed)) {
+    // Try to parse and validate
+    const parsed = new Date(trimmed)
+    if (Number.isNaN(parsed.getTime())) {
+      return { isValid: false, error: `รูปแบบวันที่ไม่ถูกต้อง: ${trimmed} (กรุณาใช้รูปแบบ YYYY-MM-DD)` }
+    }
+    return { isValid: false, error: `รูปแบบวันที่ไม่ถูกต้อง: ${trimmed} (กรุณาใช้รูปแบบ YYYY-MM-DD แทน DD/MM/YYYY หรือ MM/DD/YYYY)` }
+  } else {
+    return { isValid: false, error: `รูปแบบวันที่ไม่ถูกต้อง: ${trimmed} (กรุณาใช้รูปแบบ YYYY-MM-DD เช่น 2025-01-15)` }
+  }
+}
+
+// Check if a value looks like it should be an integer but has comma
+const detectCommaInInteger = (value: string, columnName: string): boolean => {
+  if (!value || !value.trim()) return false
+  
+  const trimmed = value.trim()
+  
+  // Must actually contain a comma to be considered an error
+  if (!trimmed.includes(",")) {
+    return false
+  }
+  
+  // Check if value contains comma-separated numbers (e.g., "1,000", "1,234,567")
+  // Pattern: digits with comma separators (must have at least one comma)
+  // Format: 1-3 digits, followed by one or more groups of ",123" (comma + exactly 3 digits)
+  const numberWithCommaPattern = /^\d{1,3}(,\d{3})+$/
+  
+  // If it matches number with comma pattern (has comma), return true
+  if (numberWithCommaPattern.test(trimmed)) {
+    return true
+  }
+  
+  // Also check if it has comma but looks like a number with comma separator
+  // This catches cases like "1,234" or "123,456" but not "7" or "978" or "0"
+  // Pattern: starts with digits, has comma, followed by digits
+  if (/^\d+,\d+$/.test(trimmed.replace(/\s/g, ""))) {
+    return true
+  }
+  
+  return false
+}
+
+// Detect if CSV has comma issues (unequal column counts and comma in numbers)
+const detectCSVIssues = (
+  text: string,
+  headers: string[],
+  rows?: MetricsRow[],
+): { hasError: boolean; errors: string[] } => {
+  const errors: string[] = []
+  const lines = text.replace(/\r/g, "").trim().split("\n")
+  const expectedColumnCount = headers.length
+
+  // Check data rows - simple split by comma (for basic CSV without quoted values)
+  lines.slice(1).forEach((line, index) => {
+    if (!line.trim()) return // Skip empty lines
+
+    // Simple comma split (works for most cases)
+    const columnCount = line.split(",").length
+
+    // Check if column count significantly differs
+    if (Math.abs(columnCount - expectedColumnCount) > 1) {
+      errors.push(
+        `แถวที่ ${index + 2}: จำนวนคอลัมน์ไม่ตรงกัน (คาดหวัง ${expectedColumnCount} คอลัมน์ แต่พบ ${columnCount} คอลัมน์) - อาจมี comma (,) หลุดออกมาในข้อมูล หรือมี comma เกินในเซลล์ (ควรใส่ข้อมูลที่มี comma ใน double quotes "ข้อความ,ที่มีcomma")`,
+      )
+    }
+  })
+
+  // Check for comma in numeric columns if rows are provided
+  if (rows) {
+    // Define numeric columns that should not have comma
+    const numericColumns = [
+      "impression_organic",
+      "impression_boost_post",
+      "impression_boost",
+      "impressions_boost",
+      "impressions_organic",
+      "reach_organic",
+      "reach_boost_post",
+      "reach_boost",
+      "reach_total",
+      "engage_likes",
+      "engange_comments",
+      "engage_comments",
+      "engage_comment",
+      "engage_shares",
+      "engage_save",
+      "engage_saves",
+      "post_click",
+      "link_click",
+      "retweet",
+      "vdo_view",
+      "engagement_rate",
+    ]
+
+    rows.forEach((row, index) => {
+      numericColumns.forEach((columnName) => {
+        const value = (row as any)[columnName]
+        if (value !== undefined && value !== null && value !== "") {
+          const valueStr = value.toString().trim()
+          // Only check if value string actually contains a comma
+          // Skip pure numeric strings without comma
+          if (valueStr && valueStr.includes(",")) {
+            if (detectCommaInInteger(valueStr, columnName)) {
+              errors.push(
+                `แถวที่ ${index + 2}, คอลัมน์ "${columnName}": พบ comma (,) ในค่าที่ควรเป็นตัวเลขจำนวนเต็ม (${valueStr}) - กรุณาลบ comma ออก (เช่น 1,000 ควรเป็น 1000)`,
+              )
+            }
+          }
+        }
+      })
+    })
+  }
+
+  // Only show first 10 errors to avoid overwhelming the user
+  return { hasError: errors.length > 0, errors: errors.slice(0, 10) }
+}
+
 const formatTimestampForFileName = (date: Date) => {
   const pad = (value: number) => value.toString().padStart(2, "0")
   const year = date.getFullYear().toString().slice(-2)
@@ -231,6 +372,7 @@ export function PostMetricsImport({ onComplete }: PostMetricsImportProps) {
   const [sheetValidationWarnings, setSheetValidationWarnings] = useState<string[]>([])
   const [sheetUnknownColumns, setSheetUnknownColumns] = useState<string[]>([])
   const [sheetHeaders, setSheetHeaders] = useState<string[]>([])
+  const [sheetDataErrors, setSheetDataErrors] = useState<string[]>([]) // Errors from data validation (date format, comma issues)
 
   const toNullableNumber = (value?: string | number) => {
     const numericValue = parseNumber(value)
@@ -246,6 +388,7 @@ export function PostMetricsImport({ onComplete }: PostMetricsImportProps) {
     setSheetValidationWarnings([])
     setSheetUnknownColumns([])
     setSheetHeaders([])
+    setSheetDataErrors([])
     setRowsBuffer([])
 
     try {
@@ -273,6 +416,38 @@ export function PostMetricsImport({ onComplete }: PostMetricsImportProps) {
       if (!rows.length) {
         throw new Error("ไม่พบข้อมูลในไฟล์หรือรูปแบบไม่ถูกต้อง")
       }
+
+      // Check for CSV parsing issues (comma problems) - check after parsing to get rows
+      if (isCSV) {
+        const csvIssues = detectCSVIssues(text, headers, rows)
+        if (csvIssues.hasError) {
+          setSheetDataErrors(csvIssues.errors)
+          throw new Error("พบปัญหาการอ่านข้อมูล: " + csvIssues.errors.slice(0, 3).join("; ") + (csvIssues.errors.length > 3 ? "..." : ""))
+        }
+
+        // Validate date formats in update_post column
+        const dateValidationErrors: string[] = []
+        rows.forEach((row, index) => {
+          if (row.update_post) {
+            const dateValidation = validateDateFormat(row.update_post.toString())
+            if (!dateValidation.isValid && dateValidation.error) {
+              dateValidationErrors.push(`แถวที่ ${index + 2}: ${dateValidation.error}`)
+            }
+          }
+        })
+
+        if (dateValidationErrors.length > 0) {
+          setSheetDataErrors((prev) => [...prev, ...dateValidationErrors.slice(0, 10)]) // Show first 10 errors
+          throw new Error(
+            `พบปัญหา format วันที่ในคอลัมน์ update_post (พบ ${dateValidationErrors.length} รายการ): ` +
+              dateValidationErrors.slice(0, 3).join("; ") +
+              (dateValidationErrors.length > 3 ? "..." : ""),
+          )
+        }
+      }
+
+      // Clear data errors if all validations pass
+      setSheetDataErrors([])
 
       setPreview(rows.slice(0, 5))
       setFile(selected)
@@ -455,11 +630,12 @@ export function PostMetricsImport({ onComplete }: PostMetricsImportProps) {
     setResult(null)
     setPreview([])
     setFile(null)
-    setSheetValidationErrors([])
-    setSheetValidationWarnings([])
-    setSheetUnknownColumns([])
-    setSheetHeaders([])
-    setRowsBuffer([])
+      setSheetValidationErrors([])
+      setSheetValidationWarnings([])
+      setSheetUnknownColumns([])
+      setSheetHeaders([])
+      setSheetDataErrors([])
+      setRowsBuffer([])
 
     try {
       const inputUrl = sheetUrlInput.trim()
@@ -504,6 +680,36 @@ export function PostMetricsImport({ onComplete }: PostMetricsImportProps) {
       if (!rows.length) {
         throw new Error("ข้อมูลที่ดึงมาว่างหรือไม่ตรงรูปแบบ")
       }
+
+      // Check for CSV parsing issues (comma problems) - check after parsing to get rows
+      const csvIssues = detectCSVIssues(text, headers, rows)
+      if (csvIssues.hasError) {
+        setSheetDataErrors(csvIssues.errors)
+        throw new Error("พบปัญหาการอ่านข้อมูล: " + csvIssues.errors.slice(0, 3).join("; ") + (csvIssues.errors.length > 3 ? "..." : ""))
+      }
+
+      // Validate date formats in update_post column
+      const dateValidationErrors: string[] = []
+      rows.forEach((row, index) => {
+        if (row.update_post) {
+          const dateValidation = validateDateFormat(row.update_post.toString())
+          if (!dateValidation.isValid && dateValidation.error) {
+            dateValidationErrors.push(`แถวที่ ${index + 2}: ${dateValidation.error}`)
+          }
+        }
+      })
+
+      if (dateValidationErrors.length > 0) {
+        setSheetDataErrors((prev) => [...prev, ...dateValidationErrors.slice(0, 10)]) // Show first 10 errors
+        throw new Error(
+          `พบปัญหา format วันที่ในคอลัมน์ update_post (พบ ${dateValidationErrors.length} รายการ): ` +
+            dateValidationErrors.slice(0, 3).join("; ") +
+            (dateValidationErrors.length > 3 ? "..." : ""),
+        )
+      }
+
+      // Clear data errors if all validations pass
+      setSheetDataErrors([])
 
       setPreview(rows.slice(0, 5))
       setRowsBuffer(rows)
@@ -613,6 +819,25 @@ export function PostMetricsImport({ onComplete }: PostMetricsImportProps) {
         </Alert>
       )}
 
+      {sheetDataErrors.length > 0 && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription className="space-y-2 text-sm">
+            <p className="font-semibold">พบปัญหาข้อมูลใน Google Sheet กรุณาแก้ไขก่อนนำเข้า:</p>
+            <ul className="list-inside list-disc max-h-40 space-y-1 overflow-auto">
+              {sheetDataErrors.map((error, index) => (
+                <li key={index} className="text-xs">
+                  {error}
+                </li>
+              ))}
+            </ul>
+            {sheetDataErrors.length >= 10 && (
+              <p className="text-xs text-muted-foreground">... (แสดงเฉพาะ 10 รายการแรก)</p>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {preview.length > 0 && (
         <div className="space-y-2">
           <Label>ตัวอย่างข้อมูล (5 แถวแรก)</Label>
@@ -702,7 +927,12 @@ export function PostMetricsImport({ onComplete }: PostMetricsImportProps) {
 
       <Button
         onClick={handleImport}
-        disabled={(file === null && rowsBuffer.length === 0) || isProcessing || sheetValidationErrors.length > 0}
+        disabled={
+          (file === null && rowsBuffer.length === 0) ||
+          isProcessing ||
+          sheetValidationErrors.length > 0 ||
+          sheetDataErrors.length > 0
+        }
         className="w-full"
       >
         <Upload className="mr-2 h-4 w-4" />

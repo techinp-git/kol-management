@@ -272,6 +272,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../app/dashboard/master-post-intention/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/dashboard/master-post-intention">> = Specific
+  const handler = {} as typeof import("../../../app/dashboard/master-post-intention/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../app/dashboard/page.tsx
 {
   type __IsExpected<Specific extends AppPageConfig<"/dashboard">> = Specific
@@ -582,6 +591,24 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/kols">> = Specific
   const handler = {} as typeof import("../../../app/api/kols/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/api/master-post-intention/[id]/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/master-post-intention/[id]">> = Specific
+  const handler = {} as typeof import("../../../app/api/master-post-intention/[id]/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/api/master-post-intention/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/master-post-intention">> = Specific
+  const handler = {} as typeof import("../../../app/api/master-post-intention/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check

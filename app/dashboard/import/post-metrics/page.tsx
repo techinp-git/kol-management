@@ -149,8 +149,17 @@ export default function PostMetricsImportPage() {
       })
 
       if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data?.error ?? "ไม่สามารถลบข้อมูลได้")
+        let errorData: any = {}
+        try {
+          const text = await res.text()
+          if (text) {
+            errorData = JSON.parse(text)
+          }
+        } catch (parseError) {
+          console.error("[v0] Failed to parse error response:", parseError)
+        }
+        const errorMessage = errorData?.error ?? errorData?.message ?? `ไม่สามารถลบข้อมูลได้ (${res.status})`
+        throw new Error(errorMessage)
       }
 
       if (selectedFile === fileName) {
@@ -178,10 +187,20 @@ export default function PostMetricsImportPage() {
         body: JSON.stringify({ fileName }),
       })
 
-      const data = await response.json()
+      let data: any = {}
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch (parseError) {
+        console.error("[v0] Failed to parse response:", parseError)
+        throw new Error(`ไม่สามารถอ่านข้อมูลจากเซิร์ฟเวอร์ได้: ${response.status} ${response.statusText}`)
+      }
 
       if (!response.ok) {
-        throw new Error(data?.error ?? "ไม่สามารถโอนข้อมูลไปยัง post_metrics ได้")
+        const errorMessage = data?.error ?? data?.message ?? `ไม่สามารถโอนข้อมูลไปยัง post_metrics ได้ (${response.status})`
+        throw new Error(errorMessage)
       }
 
       const summary: MetricsTransferSummary = {

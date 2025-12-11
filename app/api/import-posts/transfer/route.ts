@@ -120,20 +120,76 @@ const normalizeUrl = (input?: string | null) => {
   }
 }
 
-const toTimestamp = (value?: string | null) => {
+const toDate = (value?: string | Date | null) => {
   if (!value) return null
+  
+  // Handle Date object directly
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null
+    const year = value.getFullYear()
+    const month = `${value.getMonth() + 1}`.padStart(2, "0")
+    const day = `${value.getDate()}`.padStart(2, "0")
+    return `${year}-${month}-${day}`
+  }
+  
+  // Handle string values
+  if (typeof value !== 'string') return null
+  
   const trimmed = value.trim()
   if (!trimmed) return null
 
+  // Handle YYYY-MM-DD format (already in correct format for DATE type)
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return new Date(`${trimmed}T00:00:00Z`).toISOString()
+    return trimmed // Return as-is for DATE type
   }
 
-  const parsed = new Date(trimmed)
-  if (Number.isNaN(parsed.getTime())) {
-    return null
+  // Handle DD/MM/YYYY format (Thai/European date format)
+  // This is common in Google Sheets exports from Thailand
+  const slashDateMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (slashDateMatch) {
+    const [, part1, part2, year] = slashDateMatch
+    const num1 = parseInt(part1, 10)
+    const num2 = parseInt(part2, 10)
+    
+    // If first part > 12, it's definitely DD/MM/YYYY (day > 12)
+    // If second part > 12, it's definitely DD/MM/YYYY (month > 12)
+    // Otherwise, assume DD/MM/YYYY for Thai context
+    let day: string
+    let month: string
+    
+    if (num1 > 12) {
+      // First part is day (DD/MM/YYYY)
+      day = part1.padStart(2, "0")
+      month = part2.padStart(2, "0")
+    } else if (num2 > 12) {
+      // Second part is day (MM/DD/YYYY, but day > 12 is invalid, so it must be DD/MM/YYYY)
+      day = part1.padStart(2, "0")
+      month = part2.padStart(2, "0")
+    } else {
+      // Ambiguous case: assume DD/MM/YYYY for Thai context
+      day = part1.padStart(2, "0")
+      month = part2.padStart(2, "0")
+    }
+    
+    const normalized = `${year}-${month}-${day}`
+    // Validate the date
+    const parsed = new Date(`${normalized}T00:00:00Z`)
+    if (!Number.isNaN(parsed.getTime())) {
+      return normalized // Return YYYY-MM-DD format for DATE type
+    }
   }
-  return parsed.toISOString()
+
+  // Try to parse with native Date constructor (handles ISO format, etc.)
+  const parsed = new Date(trimmed)
+  if (!Number.isNaN(parsed.getTime())) {
+    // Extract date part only (YYYY-MM-DD) for DATE type
+    const year = parsed.getFullYear()
+    const month = `${parsed.getMonth() + 1}`.padStart(2, "0")
+    const day = `${parsed.getDate()}`.padStart(2, "0")
+    return `${year}-${month}-${day}`
+  }
+
+  return null
 }
 
 const toNumber = (value: unknown) => {
@@ -879,10 +935,13 @@ export async function POST(request: Request) {
     let adminClient: ReturnType<typeof createAdminClient>
     try {
       adminClient = createAdminClient()
-    } catch (error) {
-      console.error("[v0] Missing SUPABASE_SERVICE_ROLE_KEY for transfer:", error)
+    } catch (error: any) {
+      console.error("[v0] Failed to create admin client:", error?.message || error)
       return NextResponse.json(
-        { error: "Server missing SUPABASE_SERVICE_ROLE_KEY for admin operations" },
+        { 
+          error: error?.message || "Server missing SUPABASE_SERVICE_ROLE_KEY for admin operations",
+          hint: "Please check your .env.local file and ensure SUPABASE_SERVICE_ROLE_KEY is set correctly. Restart the server after making changes."
+        },
         { status: 500 },
       )
     }
@@ -1052,15 +1111,45 @@ export async function POST(request: Request) {
         continue
       }
 
-      const postedAt =
-        toTimestamp(payload.posted_at ?? payload.post_date ?? row.post_date) ??
-        (row.post_date ? `${row.post_date}T00:00:00Z` : null)
+      // Try to get posted_at from multiple sources and convert to DATE format (YYYY-MM-DD)
+      // Handle both string and Date object from database
+      let postedAt: string | null = null
+      
+      // First try: row.post_date (from import_post table)
+      if (row.post_date) {
+        if (typeof row.post_date === 'string') {
+          postedAt = toDate(row.post_date)
+        } else if (row.post_date instanceof Date) {
+          // If it's a Date object, convert to YYYY-MM-DD string
+          const year = row.post_date.getFullYear()
+          const month = `${row.post_date.getMonth() + 1}`.padStart(2, "0")
+          const day = `${row.post_date.getDate()}`.padStart(2, "0")
+          postedAt = `${year}-${month}-${day}`
+        }
+      }
+      
+      // Second try: payload.posted_at
+      if (!postedAt && payload.posted_at) {
+        postedAt = toDate(payload.posted_at)
+      }
+      
+      // Third try: payload.post_date
+      if (!postedAt && payload.post_date) {
+        postedAt = toDate(payload.post_date)
+      }
+      
+      console.log("[v0] Posted date conversion:", {
+        rowPostDate: row.post_date,
+        rowPostDateType: typeof row.post_date,
+        payloadPostedAt: payload.posted_at,
+        payloadPostDate: payload.post_date,
+        convertedPostedAt: postedAt
+      })
 
-      const boostBudget =
-        toNumber(payload.boost_budget ?? row.boost_budget) ?? toNumber(payload.kol_budget ?? row.kol_budget)
-
-      const kolBoostBudget =
-        toNumber(payload.kol_budget ?? row.kol_budget)
+      // Note: Budget fields (boost_budget, kol_budget) are not stored in posts table
+      // They can be stored in campaigns or campaign_kols tables if needed
+      // const boostBudget = toNumber(payload.boost_budget ?? row.boost_budget) ?? toNumber(payload.kol_budget ?? row.kol_budget)
+      // const kolBoostBudget = toNumber(payload.kol_budget ?? row.kol_budget)
 
       const externalPostId = extractExternalPostId(row, normalizedUrl, parsedLink.postId)
 
@@ -1172,21 +1261,33 @@ export async function POST(request: Request) {
         continue
       }
 
+      // Build insert payload for posts table
+      // Note: posts table fields: external_post_id, campaign_id, kol_channel_id, url, content_type, 
+      //       caption, hashtags, mentions, utm_params, posted_at, screenshot_url, status, notes, 
+      //       created_by, post_name
       const insertPayload: Record<string, any> = {
         external_post_id: externalPostId,
         post_name: row.post_name ?? payload.post_name ?? null,
         kol_channel_id: kolChannelInfo?.channelId,
         url: normalizedUrl,
-        content_type: row.content_type ?? payload.content_type ?? null,
+        // Use post_type as fallback if content_type is empty
+        content_type: row.content_type ?? payload.content_type ?? row.post_type ?? payload.post_type ?? null,
         caption: payload.caption ?? row.post_note ?? null,
         posted_at: postedAt,
-        boost_budget: boostBudget ?? 0,
-        kol_boost_budget: kolBoostBudget ?? null,
         notes: row.post_note ?? payload.notes ?? null,
-        remark: payload.remark ?? row.post_note ?? null,
         status: "published",
         created_by: creatorProfileId ?? null,
       }
+      
+      // Add budget fields if posts table has them (check schema first)
+      // Note: posts table may not have boost_budget or kol_boost_budget fields
+      // Uncomment if these fields exist in your posts schema:
+      // if (boostBudget !== null) {
+      //   insertPayload.boost_budget = boostBudget
+      // }
+      // if (kolBoostBudget !== null) {
+      //   insertPayload.kol_boost_budget = kolBoostBudget
+      // }
 
       if (campaignInfo.campaignId && isUUID(campaignInfo.campaignId)) {
         insertPayload.campaign_id = campaignInfo.campaignId

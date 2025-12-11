@@ -48,11 +48,17 @@ interface DashboardData {
   }
   sentiment: {
     brandMention: number
+    brandMentionCount: number
     kolMention: number
+    kolMentionCount: number
     other: number
+    otherCount: number
     positive: number
+    positiveCount: number
     neutral: number
+    neutralCount: number
     negative: number
+    negativeCount: number
   }
   costEfficiency: {
     totalCost: number
@@ -508,11 +514,9 @@ export function KOLPerformanceDashboard() {
           )
           const latestMetric = sortedMetrics[0]
 
-          // Use organic + boost if available, otherwise use total
-          const impressions =
-            (latestMetric.impressions_organic || 0) + (latestMetric.impressions_boost || 0) ||
-            latestMetric.impressions ||
-            0
+          // Always use organic + boost
+          const impressions = 
+            (latestMetric.impressions_organic || 0) + (latestMetric.impressions_boost || 0)
           const reach =
             (latestMetric.reach_organic || 0) + (latestMetric.reach_boost || 0) || latestMetric.reach || 0
 
@@ -549,53 +553,112 @@ export function KOLPerformanceDashboard() {
       const avgCTR = postsWithMetrics > 0 ? totalCTR / postsWithMetrics : 0
       const avgER = postsWithMetrics > 0 ? totalER / postsWithMetrics : 0
 
-      // Fetch comments for sentiment analysis
+      // Fetch comments with JOIN to master_post_intention
+      // Using database function that performs: SELECT * FROM comments c 
+      // INNER JOIN master_post_intention mp ON c.post_intention = mp.post_intention
       const postIds = posts?.map((p) => p.id) || []
-      let comments: any[] = []
+      let commentsWithIntention: any[] = []
+      
       if (postIds.length > 0) {
-        const { data: commentsData, error: commentsError } = await supabase
-          .from("comments")
-          .select("id, text")
-          .in("post_id", postIds)
+        try {
+          // Try to use RPC function for JOIN query
+          const { data: commentsData, error: commentsError } = await supabase
+            .rpc('get_comments_with_intention', { p_post_ids: postIds })
 
-        console.log("[Dashboard] Comments query result:", {
-          commentsCount: commentsData?.length || 0,
-          error: commentsError,
-          postIdsCount: postIds.length,
-        })
+          if (commentsError) {
+            throw commentsError
+          }
 
-        if (commentsError) {
-          console.warn("[Dashboard] Error fetching comments (non-critical):", commentsError)
+          console.log("[Dashboard] Comments with intention (RPC JOIN) result:", {
+            commentsCount: commentsData?.length || 0,
+            postIdsCount: postIds.length,
+          })
+
+          // Use data from RPC function (already joined with master_post_intention)
+          commentsWithIntention = commentsData || []
+        } catch (rpcError: any) {
+          // Fallback: fetch separately and join in memory (simulates JOIN)
+          console.warn("[Dashboard] RPC function not available or failed, using fallback JOIN:", rpcError?.message)
+          
+          const { data: commentsOnly, error: commentsOnlyError } = await supabase
+            .from("comments")
+            .select("id, text, post_intention, post_id")
+            .in("post_id", postIds)
+
+          const { data: masterIntentions, error: masterError } = await supabase
+            .from("master_post_intention")
+            .select("post_intention, group_intention, sentiment")
+            .eq("is_active", true)
+
+          if (commentsOnlyError) {
+            console.warn("[Dashboard] Error fetching comments:", commentsOnlyError)
+          }
+          if (masterError) {
+            console.warn("[Dashboard] Error fetching master_post_intention:", masterError)
+          }
+
+          // Create lookup map from master_post_intention (simulates JOIN)
+          const intentionMap = new Map<string, { group_intention: string; sentiment: string | null }>()
+          if (masterIntentions) {
+            masterIntentions.forEach((item) => {
+              if (item.post_intention) {
+                intentionMap.set(item.post_intention, {
+                  group_intention: item.group_intention || "Other",
+                  sentiment: item.sentiment || null,
+                })
+              }
+            })
+          }
+
+          // Join comments with master_post_intention data (simulates: comments c INNER JOIN master_post_intention mp ON c.post_intention = mp.post_intention)
+          commentsWithIntention = (commentsOnly || [])
+            .filter((comment) => comment.post_intention && intentionMap.has(comment.post_intention)) // INNER JOIN filter
+            .map((comment) => {
+              const intentionData = intentionMap.get(comment.post_intention!)!
+
+              return {
+                comment_id: comment.id,
+                post_id: comment.post_id,
+                group_intention: intentionData.group_intention,
+                sentiment: intentionData.sentiment,
+              }
+            })
+
+          console.log("[Dashboard] Comments with intention (fallback JOIN) result:", {
+            totalComments: commentsWithIntention.length,
+            withGroupIntention: commentsWithIntention.filter((c) => c.group_intention !== "Other").length,
+            withSentiment: commentsWithIntention.filter((c) => c.sentiment).length,
+          })
         }
-
-        comments = commentsData || []
       } else {
         console.log("[Dashboard] No post IDs to fetch comments")
       }
 
-      // Calculate sentiment (simplified - can be enhanced with ML)
-      const brandMention = comments.filter((c) =>
-        c.text?.toLowerCase().includes("brand") || c.text?.toLowerCase().includes("product")
-      ).length
-      const kolMention = comments.filter((c) => c.text?.toLowerCase().includes("kol") || c.text?.toLowerCase().includes("influencer")).length
-      const other = comments.length - brandMention - kolMention
-
-      // Simple sentiment analysis based on keywords
-      const positiveKeywords = ["good", "great", "love", "amazing", "excellent", "perfect", "best", "awesome", "fantastic", "wonderful", "ดี", "สุด", "ชอบ", "รัก"]
-      const negativeKeywords = ["bad", "worst", "hate", "terrible", "awful", "disappointed", "poor", "fail", "wrong", "sucks", "แย่", "ไม่ดี", "เกลียด"]
-
+      // Calculate sentiment and group mention from joined data
+      let brandMention = 0
+      let kolMention = 0
+      let other = 0
       let positive = 0
       let negative = 0
       let neutral = 0
 
-      comments.forEach((comment) => {
-        const content = comment.text?.toLowerCase() || ""
-        const hasPositive = positiveKeywords.some((keyword) => content.includes(keyword))
-        const hasNegative = negativeKeywords.some((keyword) => content.includes(keyword))
+      commentsWithIntention.forEach((comment) => {
+        const groupIntention = comment.group_intention || "Other"
+        const sentiment = comment.sentiment
 
-        if (hasPositive && !hasNegative) {
+        // Count by group_intention
+        if (groupIntention === "Brand") {
+          brandMention++
+        } else if (groupIntention === "KOL") {
+          kolMention++
+        } else {
+          other++
+        }
+
+        // Count by sentiment
+        if (sentiment === "Positive") {
           positive++
-        } else if (hasNegative && !hasPositive) {
+        } else if (sentiment === "Negative") {
           negative++
         } else {
           neutral++
@@ -607,7 +670,7 @@ export function KOLPerformanceDashboard() {
       const neutralPercent = totalSentiment > 0 ? (neutral / totalSentiment) * 100 : 0
       const negativePercent = totalSentiment > 0 ? (negative / totalSentiment) * 100 : 0
 
-      const totalCommentsForMention = comments.length
+      const totalCommentsForMention = commentsWithIntention.length
       const brandMentionPercent = totalCommentsForMention > 0 ? (brandMention / totalCommentsForMention) * 100 : 0
       const kolMentionPercent = totalCommentsForMention > 0 ? (kolMention / totalCommentsForMention) * 100 : 0
       const otherPercent = totalCommentsForMention > 0 ? (other / totalCommentsForMention) * 100 : 0
@@ -651,11 +714,17 @@ export function KOLPerformanceDashboard() {
         },
         sentiment: {
           brandMention: brandMentionPercent,
+          brandMentionCount: brandMention,
           kolMention: kolMentionPercent,
+          kolMentionCount: kolMention,
           other: otherPercent,
+          otherCount: other,
           positive: positivePercent,
+          positiveCount: positive,
           neutral: neutralPercent,
+          neutralCount: neutral,
           negative: negativePercent,
+          negativeCount: negative,
         },
         costEfficiency: {
           totalCost,
@@ -791,74 +860,72 @@ export function KOLPerformanceDashboard() {
 
       {!loading && dashboardData && (
         <>
-          {/* Primary KPI Summary */}
+          {/* Primary KPI Summary - Large Blue Cards */}
           <div>
             <h2 className="text-xl font-semibold mb-4">Primary KPI Summary</h2>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Card>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <Card className="bg-blue-600 text-white border-blue-600">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Post Count</CardTitle>
-                  <BarChart2 className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium text-white">Post</CardTitle>
+                  <BarChart2 className="h-4 w-4 text-blue-200" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{dashboardData.primaryKPIs.totalPosts.toLocaleString()}</div>
+                  <div className="text-2xl font-bold text-white">{dashboardData.primaryKPIs.totalPosts.toLocaleString()}</div>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="bg-blue-600 text-white border-blue-600">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Follower</CardTitle>
-                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium text-white">Follower</CardTitle>
+                  <Users className="h-4 w-4 text-blue-200" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{dashboardData.primaryKPIs.totalFollowers.toLocaleString()}</div>
+                  <div className="text-2xl font-bold text-white">{dashboardData.primaryKPIs.totalFollowers.toLocaleString()}</div>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="bg-blue-600 text-white border-blue-600">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Impression</CardTitle>
-                  <Eye className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium text-white">Impression</CardTitle>
+                  <Eye className="h-4 w-4 text-blue-200" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{dashboardData.primaryKPIs.totalImpressions.toLocaleString()}</div>
+                  <div className="text-2xl font-bold text-white">{dashboardData.primaryKPIs.totalImpressions.toLocaleString()}</div>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="bg-blue-600 text-white border-blue-600">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Reach</CardTitle>
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium text-white">Reach</CardTitle>
+                  <TrendingUp className="h-4 w-4 text-blue-200" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{dashboardData.primaryKPIs.totalReach.toLocaleString()}</div>
+                  <div className="text-2xl font-bold text-white">{dashboardData.primaryKPIs.totalReach.toLocaleString()}</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-blue-600 text-white border-blue-600">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-white">Total View</CardTitle>
+                  <Eye className="h-4 w-4 text-blue-200" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-white">{dashboardData.secondaryKPIs.totalViews.toLocaleString()}</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-blue-600 text-white border-blue-600">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-white">Total Engagement</CardTitle>
+                  <TrendingUp className="h-4 w-4 text-blue-200" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-white">{dashboardData.secondaryKPIs.totalEngagement.toLocaleString()}</div>
                 </CardContent>
               </Card>
             </div>
           </div>
 
-          {/* Secondary KPI Summary */}
+          {/* Engagement Details - Smaller Light Blue Cards */}
           <div>
-            <h2 className="text-xl font-semibold mb-4">Secondary KPI Summary</h2>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total View</CardTitle>
-                  <Eye className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{dashboardData.secondaryKPIs.totalViews.toLocaleString()}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Engagement</CardTitle>
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{dashboardData.secondaryKPIs.totalEngagement.toLocaleString()}</div>
-                </CardContent>
-              </Card>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mt-4">
-              <Card>
+            <h2 className="text-xl font-semibold mb-4">Engagement Details</h2>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+              <Card className="bg-blue-100 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Likes</CardTitle>
                   <Heart className="h-4 w-4 text-muted-foreground" />
@@ -867,7 +934,7 @@ export function KOLPerformanceDashboard() {
                   <div className="text-2xl font-bold">{dashboardData.secondaryKPIs.likes.toLocaleString()}</div>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="bg-blue-100 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Comments</CardTitle>
                   <MessageSquare className="h-4 w-4 text-muted-foreground" />
@@ -876,7 +943,7 @@ export function KOLPerformanceDashboard() {
                   <div className="text-2xl font-bold">{dashboardData.secondaryKPIs.comments.toLocaleString()}</div>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="bg-blue-100 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Shares</CardTitle>
                   <Share2 className="h-4 w-4 text-muted-foreground" />
@@ -885,7 +952,7 @@ export function KOLPerformanceDashboard() {
                   <div className="text-2xl font-bold">{dashboardData.secondaryKPIs.shares.toLocaleString()}</div>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="bg-blue-100 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Click Post</CardTitle>
                   <MousePointerClick className="h-4 w-4 text-muted-foreground" />
@@ -894,33 +961,13 @@ export function KOLPerformanceDashboard() {
                   <div className="text-2xl font-bold">{dashboardData.secondaryKPIs.postClicks.toLocaleString()}</div>
                 </CardContent>
               </Card>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mt-4">
-              <Card>
+              <Card className="bg-blue-100 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Link Click</CardTitle>
                   <LinkIcon className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{dashboardData.secondaryKPIs.linkClicks.toLocaleString()}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Saves</CardTitle>
-                  <Heart className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{dashboardData.secondaryKPIs.saves.toLocaleString()}</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Retweets</CardTitle>
-                  <Share2 className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{dashboardData.secondaryKPIs.retweets.toLocaleString()}</div>
                 </CardContent>
               </Card>
             </div>
@@ -936,20 +983,24 @@ export function KOLPerformanceDashboard() {
                 <div className="space-y-4">
                   <div>
                     <div className="flex justify-between mb-1">
-                      <span className="text-sm">Brand Mention</span>
-                      <span className="text-sm font-medium">{dashboardData.sentiment.brandMention.toFixed(1)}%</span>
+                      <span className="text-sm font-medium">BRAND</span>
+                      <span className="text-sm font-medium">
+                        {dashboardData.sentiment.brandMentionCount.toLocaleString()} ({dashboardData.sentiment.brandMention.toFixed(2)}%)
+                      </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
-                        className="bg-blue-600 h-2 rounded-full"
+                        className="bg-orange-500 h-2 rounded-full"
                         style={{ width: `${dashboardData.sentiment.brandMention}%` }}
                       />
                     </div>
                   </div>
                   <div>
                     <div className="flex justify-between mb-1">
-                      <span className="text-sm">KOL Mention</span>
-                      <span className="text-sm font-medium">{dashboardData.sentiment.kolMention.toFixed(1)}%</span>
+                      <span className="text-sm font-medium">KOL</span>
+                      <span className="text-sm font-medium">
+                        {dashboardData.sentiment.kolMentionCount.toLocaleString()} ({dashboardData.sentiment.kolMention.toFixed(2)}%)
+                      </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -960,8 +1011,10 @@ export function KOLPerformanceDashboard() {
                   </div>
                   <div>
                     <div className="flex justify-between mb-1">
-                      <span className="text-sm">Other</span>
-                      <span className="text-sm font-medium">{dashboardData.sentiment.other.toFixed(1)}%</span>
+                      <span className="text-sm font-medium">OTHER</span>
+                      <span className="text-sm font-medium">
+                        {dashboardData.sentiment.otherCount.toLocaleString()} ({dashboardData.sentiment.other.toFixed(2)}%)
+                      </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -976,7 +1029,7 @@ export function KOLPerformanceDashboard() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Brand Sentiment</CardTitle>
+                <CardTitle>Total BRAND Sentiment</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -984,9 +1037,11 @@ export function KOLPerformanceDashboard() {
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
                         <Smile className="h-4 w-4 text-green-600" />
-                        <span className="text-sm">Positive</span>
+                        <span className="text-sm font-medium">POSITIVE</span>
                       </div>
-                      <span className="text-sm font-medium">{dashboardData.sentiment.positive.toFixed(1)}%</span>
+                      <span className="text-sm font-medium">
+                        {dashboardData.sentiment.positiveCount.toLocaleString()} ({dashboardData.sentiment.positive.toFixed(2)}%)
+                      </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -999,9 +1054,11 @@ export function KOLPerformanceDashboard() {
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
                         <Meh className="h-4 w-4 text-yellow-600" />
-                        <span className="text-sm">Neutral</span>
+                        <span className="text-sm font-medium">NEUTRAL</span>
                       </div>
-                      <span className="text-sm font-medium">{dashboardData.sentiment.neutral.toFixed(1)}%</span>
+                      <span className="text-sm font-medium">
+                        {dashboardData.sentiment.neutralCount.toLocaleString()} ({dashboardData.sentiment.neutral.toFixed(2)}%)
+                      </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -1014,9 +1071,11 @@ export function KOLPerformanceDashboard() {
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
                         <Frown className="h-4 w-4 text-red-600" />
-                        <span className="text-sm">Negative</span>
+                        <span className="text-sm font-medium">NEGATIVE</span>
                       </div>
-                      <span className="text-sm font-medium">{dashboardData.sentiment.negative.toFixed(1)}%</span>
+                      <span className="text-sm font-medium">
+                        {dashboardData.sentiment.negativeCount.toLocaleString()} ({dashboardData.sentiment.negative.toFixed(2)}%)
+                      </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -1036,33 +1095,27 @@ export function KOLPerformanceDashboard() {
               <CardTitle>Cost Efficiency Metrics</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <div>
-                  <div className="text-sm text-muted-foreground mb-1">Total Cost</div>
+                  <div className="text-sm text-muted-foreground mb-1">CPR</div>
                   <div className="text-2xl font-bold">
-                    {dashboardData.costEfficiency.totalCost.toLocaleString()} THB
+                    {dashboardData.costEfficiency.cpr.toFixed(2)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-sm text-muted-foreground mb-1">CPR (Cost per Reach)</div>
+                  <div className="text-sm text-muted-foreground mb-1">CPE</div>
                   <div className="text-2xl font-bold">
-                    {dashboardData.costEfficiency.cpr.toFixed(2)} THB
+                    {dashboardData.costEfficiency.cpe.toFixed(2)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-sm text-muted-foreground mb-1">CPE (Cost per Engagement)</div>
+                  <div className="text-sm text-muted-foreground mb-1">CPV</div>
                   <div className="text-2xl font-bold">
-                    {dashboardData.costEfficiency.cpe.toFixed(2)} THB
+                    {dashboardData.costEfficiency.cpv.toFixed(2)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-sm text-muted-foreground mb-1">CPV (Cost per View)</div>
-                  <div className="text-2xl font-bold">
-                    {dashboardData.costEfficiency.cpv.toFixed(2)} THB
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm text-muted-foreground mb-1">%ER (Engagement Rate)</div>
+                  <div className="text-sm text-muted-foreground mb-1">%ER</div>
                   <div className="text-2xl font-bold">
                     {dashboardData.costEfficiency.er.toFixed(2)}%
                   </div>

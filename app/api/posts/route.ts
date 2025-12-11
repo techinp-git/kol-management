@@ -188,7 +188,12 @@ export async function POST(request: Request) {
         url,
         content_type: content_type || null,
         caption: caption || null,
-        posted_at: posted_at || null,
+        // Convert to DATE format (YYYY-MM-DD) - posted_at is now DATE type in database
+        posted_at: posted_at 
+          ? (typeof posted_at === 'string' 
+              ? (posted_at.includes("T") ? posted_at.split("T")[0] : posted_at.slice(0, 10))
+              : new Date(posted_at).toISOString().slice(0, 10))
+          : null,
         boost_budget: boost_budget || 0,
         remark: remark || null,
         notes: remark || null, // Also save to notes for backward compatibility

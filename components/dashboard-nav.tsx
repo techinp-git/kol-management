@@ -19,6 +19,7 @@ import {
   ChevronRight,
   LayoutDashboard,
   TrendingUp,
+  Tags,
 } from "lucide-react"
 import {
   Tooltip,
@@ -115,6 +116,11 @@ const navItems: NavItem[] = [
     title: "Rate Cards",
     href: "/dashboard/rate-cards",
     icon: DollarSign,
+  },
+  {
+    title: "Master Post Intention",
+    href: "/dashboard/master-post-intention",
+    icon: Tags,
   },
 ]
 

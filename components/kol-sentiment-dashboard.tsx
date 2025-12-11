@@ -68,47 +68,8 @@ export default function KOLSentimentDashboard({
   const [pageSize] = useState(100)
   const [totalRows, setTotalRows] = useState(0)
 
-  // Keyword lists for classification
-  const kolKeywords = ["kol", "influencer", "พี่", "เขา", "คนนี้", "คนนั้น", "influencer", "creator"]
-  const brandKeywords = ["brand", "product", "สินค้า", "แบรนด์", "ยี่ห้อ", "ของ", "product"]
-  const positiveKeywords = ["good", "great", "love", "amazing", "excellent", "perfect", "best", "awesome", "fantastic", "wonderful", "ดี", "สุด", "ชอบ", "รัก", "เยี่ยม"]
-  const negativeKeywords = ["bad", "worst", "hate", "terrible", "awful", "disappointed", "poor", "fail", "wrong", "sucks", "แย่", "ไม่ดี", "เกลียด", "ห่วย"]
-
-  // Classify comment type and sentiment
-  const classifyComment = (text: string): CommentClassification => {
-    const lowerText = text.toLowerCase()
-
-    // Check for KOL mention
-    const hasKolMention = kolKeywords.some((keyword) => lowerText.includes(keyword.toLowerCase()))
-
-    // Check for Brand mention
-    const hasBrandMention = brandKeywords.some((keyword) => lowerText.includes(keyword.toLowerCase()))
-
-    // Determine type
-    let type: "KOL" | "BRAND" | "OTHER"
-    if (hasKolMention && !hasBrandMention) {
-      type = "KOL"
-    } else if (hasBrandMention) {
-      type = "BRAND"
-    } else {
-      type = "OTHER"
-    }
-
-    // Determine sentiment
-    const hasPositive = positiveKeywords.some((keyword) => lowerText.includes(keyword.toLowerCase()))
-    const hasNegative = negativeKeywords.some((keyword) => lowerText.includes(keyword.toLowerCase()))
-
-    let sentiment: "Positive" | "Negative" | "Neutral"
-    if (hasPositive && !hasNegative) {
-      sentiment = "Positive"
-    } else if (hasNegative && !hasPositive) {
-      sentiment = "Negative"
-    } else {
-      sentiment = "Neutral"
-    }
-
-    return { type, sentiment }
-  }
+  // No longer using keyword-based classification
+  // Using JOIN query with master_post_intention instead
 
   // Fetch projects based on selected account
   useEffect(() => {
@@ -276,14 +237,33 @@ export default function KOLSentimentDashboard({
 
       const postIds = postsData.map((p) => p.id)
 
-      // 3. Get all comments for these posts
-      const { data: commentsData, error: commentsError } = await supabase
-        .from("comments")
-        .select(`
-          id,
-          text,
-          post_id,
-          posts(
+      // 3. Get all comments with JOIN to master_post_intention
+      // Using database function: SELECT * FROM comments c 
+      // INNER JOIN master_post_intention mp ON c.post_intention = mp.post_intention
+      let commentsWithIntention: any[] = []
+
+      try {
+        // Try to use RPC function for JOIN query
+        const { data: commentsData, error: commentsError } = await supabase
+          .rpc('get_comments_with_intention', { p_post_ids: postIds })
+
+        if (commentsError) {
+          throw commentsError
+        }
+
+        console.log("[Sentiment Dashboard] Comments with intention (RPC JOIN) result:", {
+          commentsCount: commentsData?.length || 0,
+          postIdsCount: postIds.length,
+        })
+
+        // Use data from RPC function (already joined with master_post_intention)
+        const commentsFromRPC = commentsData || []
+
+        // Fetch post details for all unique post_ids at once
+        const uniquePostIds = [...new Set(commentsFromRPC.map((c) => c.post_id))]
+        const { data: postsData, error: postsError } = await supabase
+          .from("posts")
+          .select(`
             id,
             campaign_id,
             kol_channel_id,
@@ -302,24 +282,121 @@ export default function KOLSentimentDashboard({
                 name
               )
             )
-          )
-        `)
-        .in("post_id", postIds)
+          `)
+          .in("id", uniquePostIds)
 
-      if (commentsError) {
-        throw new Error(`Error fetching comments: ${commentsError.message}`)
+        if (postsError) {
+          console.warn("[Sentiment Dashboard] Error fetching posts:", postsError)
+        }
+
+        // Create a map for quick post lookup
+        const postsMap = new Map()
+        if (postsData) {
+          postsData.forEach((post) => {
+            postsMap.set(post.id, post)
+          })
+        }
+
+        // Combine comments with post details
+        commentsWithIntention = commentsFromRPC
+          .filter((comment) => postsMap.has(comment.post_id))
+          .map((comment) => {
+            const postData = postsMap.get(comment.post_id)
+            return {
+              ...comment,
+              id: comment.comment_id,
+              posts: postData,
+              classification: {
+                type: (comment.group_intention === "KOL" ? "KOL" : comment.group_intention === "Brand" ? "BRAND" : "OTHER") as "KOL" | "BRAND" | "OTHER",
+                sentiment: (comment.sentiment || "Neutral") as "Positive" | "Negative" | "Neutral",
+              },
+            }
+          })
+      } catch (rpcError: any) {
+        // Fallback: fetch separately and join in memory (simulates JOIN)
+        console.warn("[Sentiment Dashboard] RPC function not available or failed, using fallback JOIN:", rpcError?.message)
+
+        const { data: commentsOnly, error: commentsOnlyError } = await supabase
+          .from("comments")
+          .select(`
+            id,
+            text,
+            post_intention,
+            post_id,
+            posts(
+              id,
+              campaign_id,
+              kol_channel_id,
+              kol_channels(
+                kols(
+                  id,
+                  name
+                )
+              ),
+              campaigns(
+                id,
+                name,
+                project_id,
+                projects(
+                  id,
+                  name
+                )
+              )
+            )
+          `)
+          .in("post_id", postIds)
+
+        const { data: masterIntentions, error: masterError } = await supabase
+          .from("master_post_intention")
+          .select("post_intention, group_intention, sentiment")
+          .eq("is_active", true)
+
+        if (commentsOnlyError) {
+          throw new Error(`Error fetching comments: ${commentsOnlyError.message}`)
+        }
+        if (masterError) {
+          throw new Error(`Error fetching master_post_intention: ${masterError.message}`)
+        }
+
+        // Create lookup map from master_post_intention (simulates JOIN)
+        const intentionMap = new Map<string, { group_intention: string; sentiment: string | null }>()
+        if (masterIntentions) {
+          masterIntentions.forEach((item) => {
+            if (item.post_intention) {
+              intentionMap.set(item.post_intention, {
+                group_intention: item.group_intention || "Other",
+                sentiment: item.sentiment || null,
+              })
+            }
+          })
+        }
+
+        // Join comments with master_post_intention data (simulates: comments c INNER JOIN master_post_intention mp ON c.post_intention = mp.post_intention)
+        commentsWithIntention = (commentsOnly || [])
+          .filter((comment) => comment.post_intention && intentionMap.has(comment.post_intention)) // INNER JOIN filter
+          .map((comment) => {
+            const intentionData = intentionMap.get(comment.post_intention!)!
+
+            return {
+              comment_id: comment.id,
+              post_id: comment.post_id,
+              text: comment.text,
+              posts: comment.posts,
+              group_intention: intentionData.group_intention,
+              sentiment: intentionData.sentiment,
+              classification: {
+                type: (intentionData.group_intention === "KOL" ? "KOL" : intentionData.group_intention === "Brand" ? "BRAND" : "OTHER") as "KOL" | "BRAND" | "OTHER",
+                sentiment: (intentionData.sentiment || "Neutral") as "Positive" | "Negative" | "Neutral",
+              },
+            }
+          })
+
+        console.log("[Sentiment Dashboard] Comments with intention (fallback JOIN) result:", {
+          totalComments: commentsWithIntention.length,
+        })
       }
 
-      const comments = commentsData || []
-
-      // 4. Classify all comments
-      const classifiedComments = comments.map((comment: any) => {
-        const classification = classifyComment(comment.text || "")
-        return {
-          ...comment,
-          classification,
-        }
-      })
+      const classifiedComments = commentsWithIntention
 
       // 5. Calculate chart data
       // Total Comment by Type
@@ -590,8 +667,14 @@ export default function KOLSentimentDashboard({
                         cx="50%"
                         cy="50%"
                         labelLine={false}
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={80}
+                        label={({ name, percent, value }) => {
+                          // Only show label if segment is large enough (>5%)
+                          if (percent < 0.05) return ""
+                          return `${name}\n${(percent * 100).toFixed(0)}%`
+                        }}
+                        outerRadius={70}
+                        innerRadius={0}
+                        paddingAngle={2}
                         fill="#8884d8"
                         dataKey="value"
                       >
@@ -599,8 +682,15 @@ export default function KOLSentimentDashboard({
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip />
-                      <Legend />
+                      <Tooltip 
+                        formatter={(value: number, name: string, props: any) => [
+                          `${props.payload.name}: ${value} (${(props.payload.percent * 100).toFixed(1)}%)`,
+                          ""
+                        ]}
+                      />
+                      <Legend 
+                        formatter={(value, entry: any) => `${value}: ${entry.payload.value} (${(entry.payload.percent * 100).toFixed(1)}%)`}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
@@ -625,8 +715,14 @@ export default function KOLSentimentDashboard({
                         cx="50%"
                         cy="50%"
                         labelLine={false}
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={80}
+                        label={({ name, percent, value }) => {
+                          // Only show label if segment is large enough (>5%)
+                          if (percent < 0.05) return ""
+                          return `${name}\n${(percent * 100).toFixed(0)}%`
+                        }}
+                        outerRadius={70}
+                        innerRadius={0}
+                        paddingAngle={2}
                         fill="#8884d8"
                         dataKey="value"
                       >
@@ -634,8 +730,15 @@ export default function KOLSentimentDashboard({
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip />
-                      <Legend />
+                      <Tooltip 
+                        formatter={(value: number, name: string, props: any) => [
+                          `${props.payload.name}: ${value} (${(props.payload.percent * 100).toFixed(1)}%)`,
+                          ""
+                        ]}
+                      />
+                      <Legend 
+                        formatter={(value, entry: any) => `${value}: ${entry.payload.value} (${(entry.payload.percent * 100).toFixed(1)}%)`}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
@@ -660,8 +763,14 @@ export default function KOLSentimentDashboard({
                         cx="50%"
                         cy="50%"
                         labelLine={false}
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={80}
+                        label={({ name, percent, value }) => {
+                          // Only show label if segment is large enough (>5%)
+                          if (percent < 0.05) return ""
+                          return `${name}\n${(percent * 100).toFixed(0)}%`
+                        }}
+                        outerRadius={70}
+                        innerRadius={0}
+                        paddingAngle={2}
                         fill="#8884d8"
                         dataKey="value"
                       >
@@ -669,8 +778,15 @@ export default function KOLSentimentDashboard({
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip />
-                      <Legend />
+                      <Tooltip 
+                        formatter={(value: number, name: string, props: any) => [
+                          `${props.payload.name}: ${value} (${(props.payload.percent * 100).toFixed(1)}%)`,
+                          ""
+                        ]}
+                      />
+                      <Legend 
+                        formatter={(value, entry: any) => `${value}: ${entry.payload.value} (${(entry.payload.percent * 100).toFixed(1)}%)`}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (

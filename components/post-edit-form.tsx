@@ -29,7 +29,14 @@ export function PostEditForm({ post, campaigns, kols }: { post: any; campaigns: 
   const [url, setUrl] = useState(post.url || "")
   const [contentType, setContentType] = useState(post.content_type || "")
   const [caption, setCaption] = useState(post.caption || "")
-  const [postedAt, setPostedAt] = useState(post.posted_at ? new Date(post.posted_at).toISOString().slice(0, 16) : "")
+  // Convert DATE to YYYY-MM-DD format for date input
+  const [postedAt, setPostedAt] = useState(
+    post.posted_at 
+      ? (typeof post.posted_at === 'string' 
+          ? (post.posted_at.includes('T') ? post.posted_at.split('T')[0] : post.posted_at)
+          : new Date(post.posted_at).toISOString().slice(0, 10))
+      : ""
+  )
   const [boostBudget, setBoostBudget] = useState(post.boost_budget ? post.boost_budget.toString() : "")
   const [remark, setRemark] = useState(post.remark || post.notes || "")
 
@@ -390,7 +397,7 @@ export function PostEditForm({ post, campaigns, kols }: { post: any; campaigns: 
               <Label htmlFor="postedAt">วันที่โพสต์</Label>
               <Input
                 id="postedAt"
-                type="datetime-local"
+                type="date"
                 value={postedAt}
                 onChange={(e) => setPostedAt(e.target.value)}
               />

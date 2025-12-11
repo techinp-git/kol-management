@@ -374,7 +374,13 @@ export function PostDetailClient({ post }: { post: any }) {
             {post.posted_at && (
               <div>
                 <p className="text-sm font-medium text-muted-foreground">วันที่โพสต์</p>
-                <p className="font-semibold">{new Date(post.posted_at).toLocaleString("th-TH")}</p>
+                <p className="font-semibold">
+                  {new Date(post.posted_at).toLocaleDateString("th-TH", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
+                </p>
               </div>
             )}
 

@@ -476,7 +476,7 @@ export function PostForm({ campaigns, kols }: { campaigns: any[]; kols: any[] })
               <Label htmlFor="postedAt">วันที่โพสต์</Label>
               <Input
                 id="postedAt"
-                type="datetime-local"
+                type="date"
                 value={postedAt}
                 onChange={(e) => setPostedAt(e.target.value)}
               />
