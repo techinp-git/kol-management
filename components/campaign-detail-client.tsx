@@ -174,13 +174,13 @@ export function CampaignDetailClient({ campaign: initialCampaign, posts: initial
             <p className="text-muted-foreground">
               {campaign.project && (
                 <>
-                  <Link href={`/dashboard/projects/${campaign.project.id}`} className="hover:underline font-medium">
+                  <Link href={`/projects/${campaign.project.id}`} className="hover:underline font-medium">
                     {campaign.project.name}
                   </Link>
                   {campaign.project.account && (
                     <>
                       {" • "}
-                      <Link href={`/dashboard/accounts/${campaign.project.account.id}`} className="hover:underline">
+                      <Link href={`/accounts/${campaign.project.account.id}`} className="hover:underline">
                         {campaign.project.account.name}
                       </Link>
                     </>
@@ -194,7 +194,7 @@ export function CampaignDetailClient({ campaign: initialCampaign, posts: initial
           <Badge className={`${getStatusColor(campaign.status)} border`}>
             {getStatusText(campaign.status)}
           </Badge>
-          <Link href={`/dashboard/campaigns/${campaign.id}/edit`}>
+          <Link href={`/campaigns/${campaign.id}/edit`}>
             <Button variant="outline">
               <Edit className="h-4 w-4 mr-2" />
               แก้ไข
@@ -310,7 +310,7 @@ export function CampaignDetailClient({ campaign: initialCampaign, posts: initial
                       </div>
                       <div>
                         {ck.kol && (
-                          <Link href={`/dashboard/kols/${ck.kol.id}`}>
+                          <Link href={`/kols/${ck.kol.id}`}>
                             <h4 className="font-semibold hover:underline">{ck.kol.name}</h4>
                           </Link>
                         )}
@@ -353,7 +353,7 @@ export function CampaignDetailClient({ campaign: initialCampaign, posts: initial
               <CardTitle>โพสต์ภายใต้แคมเปญ ({posts.length})</CardTitle>
             </div>
             {posts.length > 0 && (
-              <Link href={`/dashboard/posts?campaign_id=${campaign.id}`} className="text-sm text-primary hover:underline">
+              <Link href={`/posts?campaign_id=${campaign.id}`} className="text-sm text-primary hover:underline">
                 ดูทั้งหมด
               </Link>
             )}
@@ -380,7 +380,7 @@ export function CampaignDetailClient({ campaign: initialCampaign, posts: initial
                     <TableRow key={post.id}>
                       <TableCell>
                         <div className="space-y-1">
-                          <Link href={`/dashboard/posts/${post.id}`} className="font-semibold hover:underline">
+                          <Link href={`/posts/${post.id}`} className="font-semibold hover:underline">
                             {post.post_name || "ไม่ระบุชื่อโพสต์"}
                           </Link>
                           <p className="text-xs text-muted-foreground">

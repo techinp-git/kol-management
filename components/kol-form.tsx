@@ -146,7 +146,7 @@ export function KOLForm({ kol }: { kol?: any }) {
       console.log("[v0] KOL created successfully:", data)
       
       // Redirect to list page instead of detail page
-      router.push("/dashboard/kols")
+      router.push("/kols")
       router.refresh()
     } catch (err: any) {
       console.error("[v0] Error in handleSubmit:", err)
@@ -369,7 +369,7 @@ export function KOLForm({ kol }: { kol?: any }) {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground mb-4">จัดการอัตราค่าบริการของ KOL สำหรับแต่ละประเภทโพสต์</p>
-          <Button type="button" variant="outline" onClick={() => router.push("/dashboard/rate-cards/new")}>
+          <Button type="button" variant="outline" onClick={() => router.push("/rate-cards/new")}>
             <DollarSign className="mr-2 h-4 w-4" />
             สร้าง Rate Card
           </Button>

@@ -69,7 +69,7 @@ export default async function RateCardsPage() {
           <p className="text-muted-foreground">จัดการอัตราค่าบริการของ KOL</p>
         </div>
         <Button asChild>
-          <Link href="/dashboard/rate-cards/new">
+          <Link href="/rate-cards/new">
             <Plus className="mr-2 h-4 w-4" />
             สร้าง Rate Card
           </Link>
@@ -85,7 +85,7 @@ export default async function RateCardsPage() {
           const rateItemsCount = card.rate_items?.length || 0
           
           return (
-          <Link key={card.id} href={`/dashboard/rate-cards/${card.id}`}>
+          <Link key={card.id} href={`/rate-cards/${card.id}`}>
             <Card className="hover:border-primary transition-colors cursor-pointer">
               <CardHeader>
                 <div className="flex items-start justify-between">
@@ -128,7 +128,7 @@ export default async function RateCardsPage() {
             <h3 className="text-lg font-semibold mb-2">ยังไม่มี Rate Card</h3>
             <p className="text-muted-foreground text-center mb-4">เริ่มต้นสร้าง Rate Card เพื่อกำหนดอัตราค่าบริการของ KOL</p>
             <Button asChild>
-              <Link href="/dashboard/rate-cards/new">
+              <Link href="/rate-cards/new">
                 <Plus className="mr-2 h-4 w-4" />
                 สร้าง Rate Card แรก
               </Link>

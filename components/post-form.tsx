@@ -218,7 +218,7 @@ export function PostForm({ campaigns, kols }: { campaigns: any[]; kols: any[] })
         throw new Error(data.error || "Failed to save post")
       }
 
-      router.push("/dashboard/posts")
+      router.push("/posts")
       router.refresh()
     } catch (err: any) {
       console.error("[v0] Error saving post:", err)

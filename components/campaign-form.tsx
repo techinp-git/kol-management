@@ -162,7 +162,7 @@ export function CampaignForm({
         }
       }
 
-      router.push("/dashboard/campaigns")
+      router.push("/campaigns")
       router.refresh()
     } catch (err: any) {
       console.error("[v0] Error saving campaign:", err)

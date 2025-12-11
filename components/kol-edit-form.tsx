@@ -156,7 +156,7 @@ export function KOLEditForm({ kol }: { kol: any }) {
       console.log("[v0] KOL updated successfully:", data)
 
       // Redirect to list page after successful update
-      router.push("/dashboard/kols")
+      router.push("/kols")
       router.refresh()
     } catch (err: any) {
       console.error("[v0] Error in handleSubmit:", err)
@@ -401,7 +401,7 @@ export function KOLEditForm({ kol }: { kol: any }) {
             <Button
               type="button"
               variant="outline"
-              onClick={() => router.push(`/dashboard/rate-cards?kol_id=${kol.id}`)}
+              onClick={() => router.push(`/rate-cards?kol_id=${kol.id}`)}
             >
               <DollarSign className="mr-2 h-4 w-4" />
               ดู Rate Cards
@@ -409,7 +409,7 @@ export function KOLEditForm({ kol }: { kol: any }) {
             <Button
               type="button"
               variant="outline"
-              onClick={() => router.push(`/dashboard/rate-cards/new?kol_id=${kol.id}`)}
+              onClick={() => router.push(`/rate-cards/new?kol_id=${kol.id}`)}
             >
               <Plus className="mr-2 h-4 w-4" />
               สร้าง Rate Card ใหม่

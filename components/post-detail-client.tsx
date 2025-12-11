@@ -166,7 +166,7 @@ export function PostDetailClient({ post }: { post: any }) {
             <p className="text-lg text-muted-foreground mt-1">{post.post_name}</p>
           )}
           <div className="flex items-center gap-2 text-muted-foreground mt-2">
-            <Link href={`/dashboard/kols/${post.kol_channels?.kols?.id}`} className="hover:underline">
+            <Link href={`/kols/${post.kol_channels?.kols?.id}`} className="hover:underline">
               {post.kol_channels?.kols?.name}
             </Link>
             <span>•</span>
@@ -291,7 +291,7 @@ export function PostDetailClient({ post }: { post: any }) {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>ข้อมูลโพสต์</CardTitle>
-              <Link href={`/dashboard/posts/${post.id}/edit`}>
+              <Link href={`/posts/${post.id}/edit`}>
                 <Button size="sm" className="bg-[#FFFF00] text-black hover:bg-[#FFFF00]/90">
                   <Pencil className="mr-2 h-4 w-4" />
                   แก้ไข
@@ -325,7 +325,7 @@ export function PostDetailClient({ post }: { post: any }) {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">KOL / Channel</p>
                 <div className="space-y-1">
-                  <Link href={`/dashboard/kols/${post.kol_channels.kols?.id}`} className="hover:underline">
+                  <Link href={`/kols/${post.kol_channels.kols?.id}`} className="hover:underline">
                     <p className="font-semibold">{post.kol_channels.kols?.name || "-"}</p>
                   </Link>
                   <div className="flex items-center gap-2">
@@ -345,7 +345,7 @@ export function PostDetailClient({ post }: { post: any }) {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">แคมเปญ</p>
                 <div className="space-y-1">
-                  <Link href={`/dashboard/campaigns/${post.campaigns.id}`} className="hover:underline">
+                  <Link href={`/campaigns/${post.campaigns.id}`} className="hover:underline">
                     <p className="font-semibold">{post.campaigns.name}</p>
                   </Link>
                   {post.campaigns.projects && (

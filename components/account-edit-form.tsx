@@ -130,7 +130,7 @@ export function AccountEditForm({ account }: { account: any }) {
         throw new Error(data.error || "Failed to update account")
       }
 
-      router.push("/dashboard/accounts")
+      router.push("/accounts")
       router.refresh()
     } catch (err: any) {
       console.error("[v0] Error updating account:", err)

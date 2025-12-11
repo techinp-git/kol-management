@@ -65,7 +65,7 @@ export function ProjectEditForm({
         throw new Error(data.error || "Failed to update project")
       }
 
-      router.push("/dashboard/projects")
+      router.push("/projects")
       router.refresh()
     } catch (err: any) {
       console.error("[v0] Error updating project:", err)

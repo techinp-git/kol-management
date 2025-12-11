@@ -31,7 +31,7 @@ export default async function ProjectsPage() {
           <h1 className="text-3xl font-bold">โปรเจกต์</h1>
           <p className="text-muted-foreground mt-1">จัดการโปรเจกต์และแคมเปญ</p>
         </div>
-        <Link href="/dashboard/projects/new">
+        <Link href="/projects/new">
           <Button className="bg-black text-[#FFFF00] hover:bg-black/90">
             <Plus className="mr-2 h-4 w-4" />
             เพิ่มโปรเจกต์

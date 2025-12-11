@@ -19,7 +19,14 @@ import {
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
 type Account = {
   id: string
@@ -47,6 +54,7 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
   const [memoText, setMemoText] = useState("")
   const [memoRating, setMemoRating] = useState(0)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null)
 
   const handleStatusChange = (accountId: string) => {
     setSelectedAccount(accountId)
@@ -61,6 +69,36 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
   const handleDelete = (accountId: string) => {
     setSelectedAccount(accountId)
     setDeleteDialogOpen(true)
+  }
+
+  const handleStatusChangeInline = async (accountId: string, newStatus: string) => {
+    setUpdatingStatus(accountId)
+    try {
+      const response = await fetch(`/api/accounts/${accountId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || "Failed to update status")
+      }
+
+      // Update local state immediately without page refresh
+      setAccounts((prevAccounts) =>
+        prevAccounts.map((account) =>
+          account.id === accountId ? { ...account, status: newStatus } : account
+        )
+      )
+
+      toast.success(`เปลี่ยนสถานะเป็น "${getStatusText(newStatus)}" สำเร็จ`)
+    } catch (err: any) {
+      console.error("[v0] Error updating status:", err)
+      toast.error(err.message || "ไม่สามารถอัปเดตสถานะได้")
+    } finally {
+      setUpdatingStatus(null)
+    }
   }
 
   const saveStatusChange = async () => {
@@ -78,15 +116,21 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
         throw new Error(data.error || "Failed to update status")
       }
 
-      // Refresh the page
-      router.refresh()
+      // Update local state immediately
+      setAccounts((prevAccounts) =>
+        prevAccounts.map((account) =>
+          account.id === selectedAccount ? { ...account, status: newStatus } : account
+        )
+      )
+
+      toast.success(`เปลี่ยนสถานะเป็น "${getStatusText(newStatus)}" สำเร็จ`)
       setStatusDialogOpen(false)
       setNewStatus("")
       setStatusReason("")
       setSelectedAccount(null)
     } catch (err: any) {
       console.error("[v0] Error updating status:", err)
-      alert(err.message)
+      toast.error(err.message || "ไม่สามารถอัปเดตสถานะได้")
     }
   }
 
@@ -185,7 +229,7 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
               {accounts.map((account) => (
                 <Card key={account.id} className="overflow-hidden border-2 hover:border-[#FFFF00]/50 transition-colors">
                   <CardContent className="p-0">
-                    <Link href={`/dashboard/accounts/${account.id}`} className="block">
+                    <Link href={`/accounts/${account.id}`} className="block">
                       <div className="p-6 space-y-4">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-4 flex-1">
@@ -200,9 +244,46 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
                               </p>
                             </div>
                           </div>
-                          <Badge className={`${getStatusColor(account.status)} border shrink-0 ml-2`}>
-                            {getStatusText(account.status)}
-                          </Badge>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                disabled={updatingStatus === account.id}
+                                className="focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Badge className={`${getStatusColor(account.status)} border shrink-0 ml-2 cursor-pointer hover:opacity-80 transition-opacity`}>
+                                  {updatingStatus === account.id ? (
+                                    <span className="animate-pulse">...</span>
+                                  ) : (
+                                    getStatusText(account.status)
+                                  )}
+                                </Badge>
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-32">
+                              <DropdownMenuItem
+                                onClick={() => handleStatusChangeInline(account.id, "active")}
+                                disabled={account.status === "active" || updatingStatus === account.id}
+                                className="cursor-pointer"
+                              >
+                                <span className="text-green-700 font-medium">ใช้งาน</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleStatusChangeInline(account.id, "inactive")}
+                                disabled={account.status === "inactive" || updatingStatus === account.id}
+                                className="cursor-pointer"
+                              >
+                                <span className="text-gray-700 font-medium">ไม่ใช้งาน</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleStatusChangeInline(account.id, "suspended")}
+                                disabled={account.status === "suspended" || updatingStatus === account.id}
+                                className="cursor-pointer"
+                              >
+                                <span className="text-red-700 font-medium">ระงับ</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
 
                         <div className="grid grid-cols-4 gap-3 pt-4 border-t">
@@ -247,17 +328,6 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
                         className="flex-1 bg-transparent"
                         onClick={(e) => {
                           e.preventDefault()
-                          handleStatusChange(account.id)
-                        }}
-                      >
-                        เปลี่ยนสถานะ
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 bg-transparent"
-                        onClick={(e) => {
-                          e.preventDefault()
                           handleAddMemo(account.id)
                         }}
                       >
@@ -287,7 +357,7 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
                   {accounts.map((account) => (
                     <TableRow key={account.id} className="hover:bg-muted/30">
                       <TableCell>
-                        <Link href={`/dashboard/accounts/${account.id}`} className="block hover:underline">
+                        <Link href={`/accounts/${account.id}`} className="block hover:underline">
                           <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-black shrink-0">
                               <Building2 className="h-5 w-5 text-[#FFFF00]" />
@@ -300,9 +370,46 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
                         </Link>
                       </TableCell>
                       <TableCell>
-                        <Badge className={`${getStatusColor(account.status)} border`}>
-                          {getStatusText(account.status)}
-                        </Badge>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              disabled={updatingStatus === account.id}
+                              className="focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <Badge className={`${getStatusColor(account.status)} border cursor-pointer hover:opacity-80 transition-opacity`}>
+                                {updatingStatus === account.id ? (
+                                  <span className="animate-pulse">...</span>
+                                ) : (
+                                  getStatusText(account.status)
+                                )}
+                              </Badge>
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-32">
+                            <DropdownMenuItem
+                              onClick={() => handleStatusChangeInline(account.id, "active")}
+                              disabled={account.status === "active" || updatingStatus === account.id}
+                              className="cursor-pointer"
+                            >
+                              <span className="text-green-700 font-medium">ใช้งาน</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleStatusChangeInline(account.id, "inactive")}
+                              disabled={account.status === "inactive" || updatingStatus === account.id}
+                              className="cursor-pointer"
+                            >
+                              <span className="text-gray-700 font-medium">ไม่ใช้งาน</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleStatusChangeInline(account.id, "suspended")}
+                              disabled={account.status === "suspended" || updatingStatus === account.id}
+                              className="cursor-pointer"
+                            >
+                              <span className="text-red-700 font-medium">ระงับ</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex flex-col items-center">
@@ -326,18 +433,11 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2 justify-center">
-                          <Link href={`/dashboard/accounts/${account.id}/edit`}>
+                          <Link href={`/accounts/${account.id}/edit`}>
                             <Button variant="outline" size="sm">
                               <Pencil className="h-4 w-4" />
                             </Button>
                           </Link>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleStatusChange(account.id)}
-                          >
-                            สถานะ
-                          </Button>
                           <Button
                             variant="outline"
                             size="sm"

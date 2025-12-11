@@ -9,19 +9,19 @@ const importOptions = [
   {
     title: "นำเข้า Post Information",
     description: "รายละเอียดโพสต์, URL, Post ID, งบประมาณ และ remark ต่าง ๆ",
-    href: "/dashboard/import/post-info",
+    href: "/import/post-info",
     icon: Info,
   },
   {
     title: "นำเข้า Post Metrics",
     description: "สถิติ impressions, reach, engagement, clicks และ views ของโพสต์",
-    href: "/dashboard/import/post-metrics",
+    href: "/import/post-metrics",
     icon: FileText,
   },
   {
     title: "นำเข้า Post Comments",
     description: "คอมเมนต์, ผู้เขียน, เวลา, จำนวนไลก์ และแท็กของโพสต์",
-    href: "/dashboard/import/post-comments",
+    href: "/import/post-comments",
     icon: MessageSquare,
   },
 ]

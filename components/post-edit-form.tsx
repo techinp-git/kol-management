@@ -191,7 +191,7 @@ export function PostEditForm({ post, campaigns, kols }: { post: any; campaigns: 
         throw new Error(data.error || "Failed to update post")
       }
 
-      router.push(`/dashboard/posts/${post.id}`)
+      router.push(`/posts/${post.id}`)
       router.refresh()
     } catch (err: any) {
       console.error("[v0] Error updating post:", err)

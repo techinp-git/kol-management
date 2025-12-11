@@ -483,12 +483,12 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
                         safeFilteredPosts.map((post) => (
                           <TableRow key={post.id} className="hover:bg-gray-50 transition-colors border-b">
                             <TableCell className="font-medium whitespace-nowrap">
-                              <Link href={`/dashboard/posts/${post.id}`} className="text-black hover:underline">
+                              <Link href={`/posts/${post.id}`} className="text-black hover:underline">
                                 {post.kol_name || "Unknown"}
                               </Link>
                             </TableCell>
                             <TableCell className="font-medium whitespace-nowrap max-w-[150px] truncate">
-                              <Link href={`/dashboard/posts/${post.id}`} className="text-black hover:underline">
+                              <Link href={`/posts/${post.id}`} className="text-black hover:underline">
                                 {post.post_name || "-"}
                               </Link>
                             </TableCell>
@@ -610,12 +610,12 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
                         safeFilteredPosts.map((post) => (
                           <TableRow key={post.id} className="hover:bg-gray-50 transition-colors border-b">
                             <TableCell className="font-medium whitespace-nowrap">
-                              <Link href={`/dashboard/posts/${post.id}`} className="text-black hover:underline">
+                              <Link href={`/posts/${post.id}`} className="text-black hover:underline">
                                 {post.kol_name || "Unknown"}
                               </Link>
                             </TableCell>
                             <TableCell className="font-medium whitespace-nowrap max-w-[150px] truncate">
-                              <Link href={`/dashboard/posts/${post.id}`} className="text-black hover:underline">
+                              <Link href={`/posts/${post.id}`} className="text-black hover:underline">
                                 {post.post_name || "-"}
                               </Link>
                             </TableCell>

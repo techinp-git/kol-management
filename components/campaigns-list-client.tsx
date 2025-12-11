@@ -215,7 +215,7 @@ export function CampaignsListClient({ initialCampaigns }: { initialCampaigns: Ca
           {filteredCampaigns.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-muted-foreground">ยังไม่มีแคมเปญในระบบ</p>
-              <Link href="/dashboard/campaigns/new">
+              <Link href="/campaigns/new">
                 <Button className="mt-4">
                   เพิ่มแคมเปญแรก
                 </Button>
@@ -227,7 +227,7 @@ export function CampaignsListClient({ initialCampaigns }: { initialCampaigns: Ca
                 <Card key={campaign.id} className="transition-colors hover:bg-accent/50">
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between gap-4">
-                      <Link href={`/dashboard/campaigns/${campaign.id}`} className="flex-1">
+                      <Link href={`/campaigns/${campaign.id}`} className="flex-1">
                         <div className="flex items-start gap-4">
                           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
                             <Target className="h-6 w-6 text-primary" />
@@ -278,7 +278,7 @@ export function CampaignsListClient({ initialCampaigns }: { initialCampaigns: Ca
                           {getStatusText(campaign.status)}
                         </Badge>
                         <div className="flex gap-2">
-                          <Link href={`/dashboard/campaigns/${campaign.id}/edit`}>
+                          <Link href={`/campaigns/${campaign.id}/edit`}>
                             <Button variant="outline" size="sm">
                               <Edit className="h-4 w-4 mr-1" />
                               แก้ไข

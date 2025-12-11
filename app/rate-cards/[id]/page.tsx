@@ -87,7 +87,7 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
           {rateCard.notes && <p className="text-muted-foreground">{rateCard.notes}</p>}
         </div>
         <Button asChild>
-          <Link href={`/dashboard/rate-cards/${id}/edit`}>
+          <Link href={`/rate-cards/${id}/edit`}>
             <Edit className="mr-2 h-4 w-4" />
             แก้ไข
           </Link>
@@ -110,7 +110,7 @@ export default async function RateCardDetailPage({ params }: { params: Promise<{
               </div>
             </div>
             <Button asChild variant="outline" size="sm" className="w-full bg-transparent">
-              <Link href={`/dashboard/kols/${rateCard.kol?.id}`}>ดูโปรไฟล์ KOL</Link>
+              <Link href={`/kols/${rateCard.kol?.id}`}>ดูโปรไฟล์ KOL</Link>
             </Button>
           </CardContent>
         </Card>

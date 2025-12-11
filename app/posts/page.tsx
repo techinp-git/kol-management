@@ -103,7 +103,7 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
               จัดการโพสต์และสถิติ
             </p>
           </div>
-          <Link href="/dashboard/posts/new">
+          <Link href="/posts/new">
             <Button className="bg-black text-[#FFFF00] hover:bg-black/90">
               <Plus className="mr-2 h-4 w-4" />
               เพิ่มโพสต์
@@ -269,7 +269,7 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
             จัดการโพสต์และสถิติ
           </p>
         </div>
-        <Link href="/dashboard/posts/new">
+        <Link href="/posts/new">
           <Button className="bg-black text-[#FFFF00] hover:bg-black/90">
             <Plus className="mr-2 h-4 w-4" />
             เพิ่มโพสต์

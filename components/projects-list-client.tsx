@@ -201,7 +201,7 @@ export function ProjectsListClient({ initialProjects }: { initialProjects: Proje
                   className="overflow-hidden border-2 hover:border-[#FFFF00]/50 transition-colors"
                 >
                   <CardContent className="p-0">
-                    <Link href={`/dashboard/projects/${project.id}`} className="block">
+                    <Link href={`/projects/${project.id}`} className="block">
                       <div className="p-6 space-y-4">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start gap-4 flex-1">
@@ -271,7 +271,7 @@ export function ProjectsListClient({ initialProjects }: { initialProjects: Proje
                     </Link>
 
                     <div className="flex gap-2 p-4 bg-muted/30 border-t">
-                      <Link href={`/dashboard/projects/${project.id}/edit`} className="flex-1">
+                      <Link href={`/projects/${project.id}/edit`} className="flex-1">
                         <Button variant="outline" size="sm" className="w-full bg-transparent">
                           <Pencil className="mr-2 h-4 w-4" />
                           แก้ไข
@@ -334,7 +334,7 @@ export function ProjectsListClient({ initialProjects }: { initialProjects: Proje
                     filteredProjects.map((project) => (
                       <TableRow key={project.id} className="hover:bg-muted/30">
                         <TableCell>
-                          <Link href={`/dashboard/projects/${project.id}`} className="block hover:underline">
+                          <Link href={`/projects/${project.id}`} className="block hover:underline">
                             <div className="flex items-center gap-3">
                               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-black shrink-0">
                                 <FolderKanban className="h-5 w-5 text-[#FFFF00]" />
@@ -374,7 +374,7 @@ export function ProjectsListClient({ initialProjects }: { initialProjects: Proje
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2 justify-center">
-                            <Link href={`/dashboard/projects/${project.id}/edit`}>
+                            <Link href={`/projects/${project.id}/edit`}>
                               <Button variant="outline" size="sm">
                                 <Pencil className="h-4 w-4" />
                               </Button>

@@ -81,7 +81,7 @@ export function AccountDetailClient({ account }: { account: any }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Link href={`/dashboard/accounts/${account.id}/edit`}>
+          <Link href={`/accounts/${account.id}/edit`}>
             <Button variant="outline">
               <Edit className="mr-2 h-4 w-4" />
               แก้ไข

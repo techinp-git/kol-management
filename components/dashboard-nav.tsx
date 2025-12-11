@@ -69,57 +69,57 @@ const navItems: NavItem[] = [
   },
   {
     title: "KOL",
-    href: "/dashboard/kols",
+    href: "/kols",
     icon: Users,
   },
   {
     title: "บัญชีลูกค้า",
-    href: "/dashboard/accounts",
+    href: "/accounts",
     icon: Briefcase,
   },
   {
     title: "โปรเจกต์",
-    href: "/dashboard/projects",
+    href: "/projects",
     icon: Target,
   },
   {
     title: "แคมเปญ",
-    href: "/dashboard/campaigns",
+    href: "/campaigns",
     icon: Target,
   },
   {
     title: "โพสต์",
-    href: "/dashboard/posts",
+    href: "/posts",
     icon: FileText,
   },
   {
     title: "คอมเมนต์",
-    href: "/dashboard/comments",
+    href: "/comments",
     icon: MessageSquare,
   },
   {
     title: "นำเข้า Post Info",
-    href: "/dashboard/import/post-info",
+    href: "/import/post-info",
     icon: Info,
   },
   {
     title: "นำเข้า Post Metrics",
-    href: "/dashboard/import/post-metrics",
+    href: "/import/post-metrics",
     icon: BarChart2,
   },
   {
     title: "นำเข้า Post Comments",
-    href: "/dashboard/import/post-comments",
+    href: "/import/post-comments",
     icon: Upload,
   },
   {
     title: "Rate Cards",
-    href: "/dashboard/rate-cards",
+    href: "/rate-cards",
     icon: DollarSign,
   },
   {
     title: "Master Post Intention",
-    href: "/dashboard/master-post-intention",
+    href: "/master/post-intention",
     icon: Tags,
   },
 ]

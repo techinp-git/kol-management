@@ -136,7 +136,7 @@ export function KOLDetailClient({
 
       if (!response.ok) throw new Error("Failed to delete KOL")
 
-      router.push("/dashboard/kols")
+      router.push("/kols")
       router.refresh()
     } catch (error) {
       console.error("[v0] Error deleting KOL:", error)
@@ -189,7 +189,7 @@ export function KOLDetailClient({
           <p className="text-muted-foreground">รายละเอียด KOL</p>
         </div>
         <div className="flex gap-2">
-          <Link href={`/dashboard/kols/${kol.id}/edit`}>
+          <Link href={`/kols/${kol.id}/edit`}>
             <Button>
               <Pencil className="mr-2 h-4 w-4" />
               แก้ไข
@@ -228,7 +228,7 @@ export function KOLDetailClient({
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold">{totalPostsCount.toLocaleString()}</p>
-            <Link href={`/dashboard/posts?kol_id=${kol.id}`}>
+            <Link href={`/posts?kol_id=${kol.id}`}>
               <p className="text-xs text-muted-foreground mt-1 hover:underline">ดูโพสต์ทั้งหมด</p>
             </Link>
           </CardContent>
@@ -604,7 +604,7 @@ export function KOLDetailClient({
                         <div className="border-t pt-4 mt-4">
                           <div className="mb-3 flex items-center justify-between">
                             <h4 className="text-sm font-semibold">โพสต์ ({channelPosts.length})</h4>
-                            <Link href={`/dashboard/posts?kol_channel_id=${channel.id}`}>
+                            <Link href={`/posts?kol_channel_id=${channel.id}`}>
                               <Button size="sm" variant="outline" className="h-7 text-xs">
                                 ดูทั้งหมด
                               </Button>
@@ -614,7 +614,7 @@ export function KOLDetailClient({
                             {channelPosts.slice(0, 10).map((post: any) => (
                               <Link
                                 key={post.id}
-                                href={`/dashboard/posts/${post.id}`}
+                                href={`/posts/${post.id}`}
                                 className="block rounded-lg border bg-muted/30 p-3 transition-colors hover:bg-muted/50"
                               >
                                 <div className="flex items-start justify-between gap-2">

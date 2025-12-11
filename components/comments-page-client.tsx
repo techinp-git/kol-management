@@ -706,7 +706,7 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
                           )}
                           {comment.posts?.id && (
                             <Link
-                              href={`/dashboard/posts/${comment.posts.id}`}
+                              href={`/posts/${comment.posts.id}`}
                               className="text-primary hover:underline inline-flex items-center gap-1"
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -754,7 +754,7 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
                       <TableCell className="hidden lg:table-cell">
                         {comment.posts?.id ? (
                           <Link
-                            href={`/dashboard/posts/${comment.posts.id}`}
+                            href={`/posts/${comment.posts.id}`}
                             className="text-primary hover:underline text-sm flex items-center gap-1"
                             onClick={(e) => e.stopPropagation()}
                           >

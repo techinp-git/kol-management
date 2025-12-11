@@ -47,7 +47,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           <div>
             <h1 className="text-3xl font-bold">{project.name}</h1>
             <p className="text-muted-foreground">
-              <Link href={`/dashboard/accounts/${project.accounts?.id}`} className="hover:underline">
+              <Link href={`/accounts/${project.accounts?.id}`} className="hover:underline">
                 {project.accounts?.name}
               </Link>
             </p>
@@ -110,7 +110,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>แคมเปญ</CardTitle>
-          <Link href={`/dashboard/campaigns/new?project_id=${project.id}`}>
+          <Link href={`/campaigns/new?project_id=${project.id}`}>
             <Button size="sm">
               <Plus className="mr-2 h-4 w-4" />
               เพิ่มแคมเปญ
@@ -121,7 +121,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           {project.campaigns && project.campaigns.length > 0 ? (
             <div className="space-y-3">
               {project.campaigns.map((campaign: any) => (
-                <Link key={campaign.id} href={`/dashboard/campaigns/${campaign.id}`}>
+                <Link key={campaign.id} href={`/campaigns/${campaign.id}`}>
                   <Card className="transition-colors hover:bg-accent">
                     <CardContent className="flex items-center justify-between p-4">
                       <div>

@@ -54,7 +54,7 @@ export function ProjectForm({
 
       if (insertError) throw insertError
 
-      router.push("/dashboard/projects")
+      router.push("/projects")
       router.refresh()
     } catch (err: any) {
       setError(err.message)

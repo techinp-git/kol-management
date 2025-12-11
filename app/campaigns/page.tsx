@@ -63,7 +63,7 @@ export default async function CampaignsPage() {
           <h1 className="text-3xl font-bold">แคมเปญ</h1>
           <p className="text-muted-foreground mt-1">จัดการแคมเปญและ KOL</p>
         </div>
-        <Link href="/dashboard/campaigns/new">
+        <Link href="/campaigns/new">
           <Button className="bg-black text-[#FFFF00] hover:bg-black/90">
             <Plus className="mr-2 h-4 w-4" />
             เพิ่มแคมเปญ

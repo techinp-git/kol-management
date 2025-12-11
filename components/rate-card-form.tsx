@@ -136,7 +136,7 @@ export function RateCardForm({ kols, initialData, rateCardId }: RateCardFormProp
       if (itemsError) throw itemsError
 
       toast.success(rateCardId ? "อัปเดต Rate Card สำเร็จ" : "สร้าง Rate Card สำเร็จ")
-      router.push(`/dashboard/rate-cards/${rateCardResult.id}`)
+      router.push(`/rate-cards/${rateCardResult.id}`)
       router.refresh()
     } catch (error) {
       console.error("Error saving rate card:", error)

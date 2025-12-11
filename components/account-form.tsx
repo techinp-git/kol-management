@@ -110,7 +110,7 @@ export function AccountForm() {
         throw new Error(data.error || "Failed to save account")
       }
 
-      router.push("/dashboard/accounts")
+      router.push("/accounts")
       router.refresh()
     } catch (err: any) {
       console.error("[v0] Error saving account:", err)

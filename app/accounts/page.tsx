@@ -86,7 +86,7 @@ export default async function AccountsPage() {
           <h1 className="text-3xl font-bold">บัญชีลูกค้า</h1>
           <p className="text-muted-foreground mt-1">จัดการบัญชีลูกค้าและแบรนด์</p>
         </div>
-        <Link href="/dashboard/accounts/new">
+        <Link href="/accounts/new">
           <Button className="bg-black text-[#FFFF00] hover:bg-black/90">
             <Plus className="mr-2 h-4 w-4" />
             เพิ่มบัญชี

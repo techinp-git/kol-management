@@ -83,7 +83,7 @@ export default async function KOLsPage({ searchParams }: KOLsPageProps) {
           <h1 className="text-3xl font-bold">KOL</h1>
           <p className="text-muted-foreground mt-1">จัดการข้อมูล KOL และช่องทางโซเชียลมีเดีย</p>
         </div>
-        <Link href="/dashboard/kols/new">
+        <Link href="/kols/new">
           <Button className="bg-black text-[#FFFF00] hover:bg-black/90">
             <Plus className="mr-2 h-4 w-4" />
             เพิ่ม KOL
