@@ -106,20 +106,52 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "ต้องระบุ fileName หรือ ids สำหรับการถ่ายโอน" }, { status: 400 })
     }
 
-    let rowsQuery = supabase.from("import_post_comments").select("*")
-    if (ids?.length) {
-      rowsQuery = rowsQuery.in("id", ids)
-    } else if (fileName) {
-      rowsQuery = rowsQuery.eq("file_name", fileName)
-    }
-    rowsQuery = rowsQuery.order("import_date", { ascending: true }).limit(1000)
+    // Fetch all rows using pagination (Supabase default limit is 1000 rows per request)
+    // Only fetch rows that haven't been transferred yet (flag_use = false or null)
+    let allRows: ImportPostCommentRow[] = []
+    const pageSize = 1000
+    let currentPage = 0
+    let hasMore = true
 
-    const { data: rows, error } = await rowsQuery
+    while (hasMore) {
+      // Build query for current page - only get rows that haven't been transferred
+      let pageQuery = supabase
+        .from("import_post_comments")
+        .select("*", { count: "exact" })
+        .or("flag_use.is.null,flag_use.eq.false")
+        .order("import_date", { ascending: true })
+        .range(currentPage * pageSize, (currentPage + 1) * pageSize - 1)
 
-    if (error) {
-      console.error("[v0] Error fetching import_post_comments rows:", error)
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      if (ids?.length) {
+        pageQuery = pageQuery.in("id", ids)
+      } else if (fileName) {
+        pageQuery = pageQuery.eq("file_name", fileName)
+      }
+
+      const { data: pageRows, error: pageError, count } = await pageQuery
+
+      if (pageError) {
+        console.error("[v0] Error fetching import_post_comments rows:", pageError)
+        return NextResponse.json({ error: pageError.message }, { status: 400 })
+      }
+
+      if (pageRows && pageRows.length > 0) {
+        allRows = [...allRows, ...(pageRows as ImportPostCommentRow[])]
+      }
+
+      // Check if there are more rows to fetch
+      const totalRows = count ?? allRows.length
+      hasMore = pageRows && pageRows.length === pageSize && allRows.length < totalRows
+      currentPage++
+
+      // Safety limit: prevent infinite loops (max 100,000 rows)
+      if (currentPage >= 100) {
+        console.warn(`[v0] Reached safety limit of ${currentPage} pages (${allRows.length} rows), stopping pagination`)
+        break
+      }
     }
+
+    const rows = allRows
 
     if (!rows || rows.length === 0) {
       return NextResponse.json({
@@ -238,6 +270,7 @@ export async function POST(request: Request) {
         timestamp,
         like_count: likeCount,
         post_intention: postIntention,
+        file_name: row.file_name, // Store source file name for grouping
       }
 
       const { data: insertedComment, error: insertError } = await adminClient

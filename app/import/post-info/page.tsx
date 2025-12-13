@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Progress } from "@/components/ui/progress"
 import { ArrowRightLeft, Download, RefreshCw, Trash2 } from "lucide-react"
 import { PostInfoImport } from "@/components/post-info-import"
 import { cn } from "@/lib/utils"
@@ -16,6 +17,7 @@ type ImportSummaryItem = {
   totalRows: number
   successCount: number
   failedCount: number
+  transferredCount: number
   lastImportDate: string | null
 }
 
@@ -73,6 +75,7 @@ export default function PostInfoImportPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [transferringFile, setTransferringFile] = useState<string | null>(null)
   const [transferSummary, setTransferSummary] = useState<TransferSummary | null>(null)
+  const [transferProgress, setTransferProgress] = useState(0)
 
   const formatDateTime = (value?: string | null) => {
     if (!value) return null
@@ -156,12 +159,24 @@ export default function PostInfoImportPage() {
     try {
       setTransferringFile(fileName)
       setTransferSummary(null)
+      setTransferProgress(0)
+
+      // Simulate progress while waiting for response
+      const progressInterval = setInterval(() => {
+        setTransferProgress((prev) => {
+          if (prev >= 90) return prev
+          return prev + Math.random() * 5
+        })
+      }, 200)
 
       const response = await fetch("/api/import-posts/transfer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileName }),
       })
+
+      clearInterval(progressInterval)
+      setTransferProgress(100)
 
       let data: any = {}
       try {
@@ -199,8 +214,11 @@ export default function PostInfoImportPage() {
     } catch (error) {
       console.error("[v0] Failed to transfer import_post batch:", error)
       toast.error(error instanceof Error ? error.message : "ไม่สามารถโอนข้อมูลไปยัง posts ได้")
+      setTransferProgress(0)
     } finally {
       setTransferringFile(null)
+      // Reset progress after a short delay to show 100%
+      setTimeout(() => setTransferProgress(0), 1000)
     }
   }
 
@@ -309,7 +327,25 @@ import_jan.csv,Creator B,My Post B,Fashion,Note B,tutorial,tiktok_video,tiktok,t
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {transferSummary && (
+          {transferringFile && (
+            <Alert className="border-blue-200 bg-blue-50">
+              <AlertDescription className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <p className="font-medium text-blue-900">
+                    กำลังถ่ายโอนข้อมูลจากไฟล์ <span className="font-semibold">{transferringFile}</span>
+                  </p>
+                  <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
+                </div>
+                <div className="space-y-2">
+                  <Progress value={transferProgress} className="h-2" />
+                  <p className="text-xs text-blue-700">
+                    {Math.round(transferProgress)}% - กรุณารอสักครู่ ระบบกำลังประมวลผลข้อมูล...
+                  </p>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+          {transferSummary && !transferringFile && (
             <Alert>
               <AlertDescription className="space-y-2 text-sm">
                 <p>
@@ -359,16 +395,17 @@ import_jan.csv,Creator B,My Post B,Fashion,Note B,tutorial,tiktok_video,tiktok,t
                   <TableRow>
                     <TableHead>File Name</TableHead>
                     <TableHead className="text-center">ทั้งหมด</TableHead>
-                    <TableHead className="text-center text-green-600">สำเร็จ</TableHead>
-                    <TableHead className="text-center text-red-600">ล้มเหลว</TableHead>
+                    <TableHead className="text-center text-green-600">ปกติ</TableHead>
+                    <TableHead className="text-center text-red-600">มีข้อผิดพลาด</TableHead>
+                    <TableHead className="text-center text-blue-600">โอนแล้ว</TableHead>
+                    <TableHead>Actions</TableHead>
                     <TableHead>ล่าสุด</TableHead>
-                    <TableHead className="text-right">การทำงาน</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {summary.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                      <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                         {isLoadingSummary ? "กำลังโหลด..." : "ยังไม่มีประวัติการนำเข้า"}
                       </TableCell>
                     </TableRow>
@@ -386,23 +423,25 @@ import_jan.csv,Creator B,My Post B,Fashion,Note B,tutorial,tiktok_video,tiktok,t
                       <TableCell className="text-center">{item.totalRows}</TableCell>
                       <TableCell className="text-center text-green-600">{item.successCount}</TableCell>
                       <TableCell className="text-center text-red-600">{item.failedCount}</TableCell>
-                      <TableCell>{formatDateTime(item.lastImportDate) ?? "-"}</TableCell>
+                      <TableCell className="text-center text-blue-600">{item.transferredCount ?? 0}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap justify-end gap-2">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              handleTransferBatch(item.fileName)
-                            }}
-                            disabled={isDeleting || transferringFile === item.fileName}
-                          >
-                            <ArrowRightLeft
-                              className={cn("mr-1 h-4 w-4", transferringFile === item.fileName && "animate-spin")}
-                            />
-                            โอนเข้า Posts
-                          </Button>
+                          {item.transferredCount < item.totalRows && (
+                            <Button
+                              size="sm"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleTransferBatch(item.fileName)
+                              }}
+                              disabled={isDeleting || transferringFile === item.fileName}
+                              className="h-8 bg-black text-[#FFFF00] hover:bg-black/90"
+                            >
+                              <ArrowRightLeft
+                                className={cn("mr-1 h-4 w-4", transferringFile === item.fileName && "animate-spin")}
+                              />
+                              โอน
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="destructive"
@@ -417,6 +456,7 @@ import_jan.csv,Creator B,My Post B,Fashion,Note B,tutorial,tiktok_video,tiktok,t
                           </Button>
                         </div>
                       </TableCell>
+                      <TableCell>{formatDateTime(item.lastImportDate) ?? "-"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -453,31 +493,35 @@ import_jan.csv,Creator B,My Post B,Fashion,Note B,tutorial,tiktok_video,tiktok,t
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">
-                      สำเร็จ: <span className="font-semibold">{item.successCount}</span>
+                      ปกติ: <span className="font-semibold">{item.successCount}</span>
                     </div>
                     <div className="rounded-md bg-red-50 px-2 py-1 text-red-600">
-                      ล้มเหลว: <span className="font-semibold">{item.failedCount}</span>
+                      มีข้อผิดพลาด: <span className="font-semibold">{item.failedCount}</span>
+                    </div>
+                    <div className="rounded-md bg-blue-50 px-2 py-1 text-blue-700">
+                      โอนแล้ว: <span className="font-semibold">{item.transferredCount ?? 0}</span>
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
                     อัปเดตล่าสุด: {formatDateTime(item.lastImportDate) ?? "—"}
                   </p>
                   <div className="mt-3">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        handleTransferBatch(item.fileName)
-                      }}
-                      disabled={isDeleting || transferringFile === item.fileName}
-                      className="mb-2 h-8 w-full px-2"
-                    >
-                      <ArrowRightLeft
-                        className={cn("mr-1 h-3.5 w-3.5", transferringFile === item.fileName && "animate-spin")}
-                      />
-                      โอนเข้า Posts
-                    </Button>
+                    {item.transferredCount < item.totalRows && (
+                      <Button
+                        size="sm"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleTransferBatch(item.fileName)
+                        }}
+                        disabled={isDeleting || transferringFile === item.fileName}
+                        className="mb-2 h-8 w-full flex-1 bg-black text-[#FFFF00] hover:bg-black/90"
+                      >
+                        <ArrowRightLeft
+                          className={cn("mr-1 h-3.5 w-3.5", transferringFile === item.fileName && "animate-spin")}
+                        />
+                        โอน
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="destructive"

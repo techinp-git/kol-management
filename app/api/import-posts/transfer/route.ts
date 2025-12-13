@@ -1146,10 +1146,9 @@ export async function POST(request: Request) {
         convertedPostedAt: postedAt
       })
 
-      // Note: Budget fields (boost_budget, kol_budget) are not stored in posts table
-      // They can be stored in campaigns or campaign_kols tables if needed
-      // const boostBudget = toNumber(payload.boost_budget ?? row.boost_budget) ?? toNumber(payload.kol_budget ?? row.kol_budget)
-      // const kolBoostBudget = toNumber(payload.kol_budget ?? row.kol_budget)
+      // Extract budget fields from import_post
+      const boostBudget = toNumber(payload.boost_budget ?? row.boost_budget) ?? null
+      const kolBudget = toNumber(payload.kol_budget ?? row.kol_budget) ?? null
 
       const externalPostId = extractExternalPostId(row, normalizedUrl, parsedLink.postId)
 
@@ -1264,12 +1263,13 @@ export async function POST(request: Request) {
       // Build insert payload for posts table
       // Note: posts table fields: external_post_id, campaign_id, kol_channel_id, url, content_type, 
       //       caption, hashtags, mentions, utm_params, posted_at, screenshot_url, status, notes, 
-      //       created_by, post_name
+      //       created_by, post_name, file_name
       const insertPayload: Record<string, any> = {
         external_post_id: externalPostId,
         post_name: row.post_name ?? payload.post_name ?? null,
         kol_channel_id: kolChannelInfo?.channelId,
         url: normalizedUrl,
+        file_name: row.file_name, // Store source file name for grouping
         // Use post_type as fallback if content_type is empty
         content_type: row.content_type ?? payload.content_type ?? row.post_type ?? payload.post_type ?? null,
         caption: payload.caption ?? row.post_note ?? null,
@@ -1279,15 +1279,15 @@ export async function POST(request: Request) {
         created_by: creatorProfileId ?? null,
       }
       
-      // Add budget fields if posts table has them (check schema first)
-      // Note: posts table may not have boost_budget or kol_boost_budget fields
-      // Uncomment if these fields exist in your posts schema:
-      // if (boostBudget !== null) {
-      //   insertPayload.boost_budget = boostBudget
-      // }
-      // if (kolBoostBudget !== null) {
-      //   insertPayload.kol_boost_budget = kolBoostBudget
-      // }
+      // Add kol_budget field to posts table (matches import_post.kol_budget)
+      if (kolBudget !== null) {
+        insertPayload.kol_budget = kolBudget
+      }
+      
+      // Add boost_budget field to posts table (matches import_post.boost_budget)
+      if (boostBudget !== null) {
+        insertPayload.boost_budget = boostBudget
+      }
 
       if (campaignInfo.campaignId && isUUID(campaignInfo.campaignId)) {
         insertPayload.campaign_id = campaignInfo.campaignId

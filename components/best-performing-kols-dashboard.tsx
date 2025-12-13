@@ -246,6 +246,8 @@ export default function BestPerformingKOLsDashboard({
           content_type,
           campaign_id,
           kol_channel_id,
+          kol_budget,
+          boost_budget,
           kol_channels(
             id,
             channel_type,
@@ -351,6 +353,13 @@ export default function BestPerformingKOLsDashboard({
           channelType.toUpperCase() === "TWITTER" ? "X" :
           channelType.toUpperCase()
 
+        // Get budget from post (kol_budget + boost_budget)
+        const postKolBudget = parseFloat(post.kol_budget?.toString() || "0") || 0
+        const postBoostBudget = parseFloat(post.boost_budget?.toString() || "0") || 0
+        
+        // Get budget from campaign_kols (allocated_budget) - use as fallback if post budget is 0
+        const campaignKolBudget = budgetMap.get(kolChannel.id) || 0
+
         const existing = kolDataMap.get(kolId) || {
           kolId,
           kolName,
@@ -368,9 +377,9 @@ export default function BestPerformingKOLsDashboard({
           engageTotal: 0,
           vdoView: 0,
           linkClick: 0,
-          budgetKol: budgetMap.get(kolChannel.id) || 0,
+          budgetKol: 0,
           budgetBoost: 0,
-          budgetTotal: budgetMap.get(kolChannel.id) || 0,
+          budgetTotal: 0,
         }
 
         // Get latest metric
@@ -409,6 +418,23 @@ export default function BestPerformingKOLsDashboard({
         existing.engageTotal += engagementTotal
         existing.vdoView += view
         existing.linkClick += linkClick
+        
+        // Accumulate budget from all posts
+        // Priority: Use post budget (kol_budget + boost_budget) if available
+        // Fallback: Use campaign_kols allocated_budget if post budget is 0
+        if (postKolBudget > 0) {
+          // Use post kol_budget
+          existing.budgetKol += postKolBudget
+        } else if (campaignKolBudget > 0 && existing.budgetKol === 0) {
+          // Use campaign_kols budget only once if no post budget exists yet
+          existing.budgetKol += campaignKolBudget
+        }
+        
+        // Always add boost_budget from post
+        existing.budgetBoost += postBoostBudget
+        
+        // Recalculate total budget
+        existing.budgetTotal = existing.budgetKol + existing.budgetBoost
 
         kolDataMap.set(kolId, existing)
       })
@@ -440,9 +466,20 @@ export default function BestPerformingKOLsDashboard({
       })
 
       const tableRows: SortingTableRow[] = Array.from(kolDataMap.values()).map((row) => {
+        // Calculate Engagement Rate (%ER)
+        // ER = (Total Engagement / Total Reach) * 100
         const er = row.reachTotal > 0 ? (row.engageTotal / row.reachTotal) * 100 : 0
+        
+        // Calculate Cost Per Reach (CPR)
+        // CPR = Total Budget / Total Reach
         const cpr = row.reachTotal > 0 ? row.budgetTotal / row.reachTotal : 0
+        
+        // Calculate Cost Per Engagement (CPE)
+        // CPE = Total Budget / Total Engagement
         const cpe = row.engageTotal > 0 ? row.budgetTotal / row.engageTotal : 0
+        
+        // Calculate Cost Per View (CPV)
+        // CPV = Total Budget / Total Views
         const cpv = row.vdoView > 0 ? row.budgetTotal / row.vdoView : 0
 
         return {

@@ -34,9 +34,9 @@ interface CommentsImportProps {
   onComplete?: (fileName?: string) => void
 }
 
-const REQUIRED_COLUMNS = ["post_link", "update_post", "kol_post_detial", "post_intention", "post_message"]
+const REQUIRED_COLUMNS = ["post_link", "update_post", "kol_post_detial", "post_intention"]
 
-const OPTIONAL_COLUMNS = ["file_name", "kol_post_detail", "sentiment", "tags"]
+const OPTIONAL_COLUMNS = ["file_name", "kol_post_detail", "post_message", "sentiment", "tags"]
 
 const COLUMN_LABELS: Record<string, string> = {
   file_name: "file_name",
@@ -81,13 +81,45 @@ const toDateOnly = (value?: string) => {
   return `${year}-${month}-${day}`
 }
 
+// Simple CSV parser that handles quoted fields with commas
+const parseCSVLine = (line: string): string[] => {
+  const values: string[] = []
+  let current = ""
+  let inQuotes = false
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    const nextChar = line[i + 1]
+    
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        // Escaped quote
+        current += '"'
+        i++ // Skip next quote
+      } else {
+        // Toggle quote state
+        inQuotes = !inQuotes
+      }
+    } else if (char === "," && !inQuotes) {
+      // Field separator
+      values.push(current.trim())
+      current = ""
+    } else {
+      current += char
+    }
+  }
+  
+  // Push last field
+  values.push(current.trim())
+  return values
+}
+
 const extractHeadersFromCSV = (text: string) => {
   const normalized = text.replace(/\r/g, "").trim()
   const headerLine = normalized.split("\n")[0] ?? ""
   if (!headerLine) return []
-  return headerLine
-    .split(",")
-    .map((header) => header.trim().toLowerCase())
+  return parseCSVLine(headerLine)
+    .map((header) => header.replace(/^"|"$/g, "").trim().toLowerCase())
     .filter(Boolean)
 }
 
@@ -112,18 +144,23 @@ const parseCSV = (text: string): CommentRow[] => {
   const lines = text.replace(/\r/g, "").trim().split("\n")
   if (lines.length <= 1) return []
 
-  const headers = lines[0]
-    .split(",")
-    .map((header) => header.trim().toLowerCase())
+  const headerLine = lines[0]
+  const headers = parseCSVLine(headerLine).map((header) => header.replace(/^"|"$/g, "").trim().toLowerCase())
 
-  return lines.slice(1).map((line) => {
-    const values = line.split(",").map((value) => value.trim())
+  const rows: CommentRow[] = []
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i]
+    if (!line.trim()) continue // Skip empty lines
+    
+    const values = parseCSVLine(line).map((v) => v.replace(/^"|"$/g, "").trim())
     const row: Record<string, string> = {}
     headers.forEach((header, index) => {
       row[header] = values[index] ?? ""
     })
-    return row as CommentRow
-  })
+    rows.push(row as CommentRow)
+  }
+
+  return rows
 }
 
 // Validate date format (YYYY-MM-DD or common date formats)
@@ -474,9 +511,7 @@ export function CommentsImport({ onComplete }: CommentsImportProps) {
         const postIntention = row.post_intention?.toString().trim() || null
         const postMessage = row.post_message?.toString().trim() || null
 
-        if (!postMessage) {
-          rowErrors.push("post_message ว่างไม่สามารถบันทึกได้")
-        }
+        // Allow empty post_message - no validation error
 
         const tagsArray = row.tags
           ? row.tags
@@ -593,6 +628,10 @@ export function CommentsImport({ onComplete }: CommentsImportProps) {
       }
 
       const rows = parseInput(text, "text/csv")
+      
+      // Log the number of rows parsed for debugging
+      console.log(`[v0] Parsed ${rows.length} rows from Google Sheet CSV`)
+      
       if (!rows.length) {
         throw new Error("ข้อมูลที่ดึงมาว่างหรือไม่ตรงรูปแบบ")
       }
@@ -627,9 +666,28 @@ export function CommentsImport({ onComplete }: CommentsImportProps) {
       // Clear data errors if all validations pass
       setSheetDataErrors([])
 
+      // Warn if less than expected rows (might indicate export limit or parsing issue)
+      const csvLines = text.split("\n").length - 1 // Exclude header
+      if (csvLines > 0) {
+        const parsedCount = rows.length
+        const csvDataLines = csvLines
+        const percentage = csvDataLines > 0 ? (parsedCount / csvDataLines) * 100 : 0
+        
+        console.log(`[v0] CSV parsing: ${csvDataLines} CSV data lines, ${parsedCount} rows parsed (${percentage.toFixed(1)}%)`)
+        
+        // Warn if significant discrepancy (more than 10% difference)
+        if (csvDataLines > 100 && parsedCount < csvDataLines * 0.9) {
+          console.warn(`[v0] Warning: Parsed ${parsedCount} rows but CSV has ${csvDataLines} data lines. ${csvDataLines - parsedCount} rows may not be parsed correctly.`)
+          toast.warning(
+            `พบความแตกต่าง: ดึงมา ${csvDataLines} แถว แต่ parse ได้ ${parsedCount} แถว (${(csvDataLines - parsedCount).toLocaleString()} แถวอาจไม่ถูก parse)`,
+            { duration: 8000 }
+          )
+        }
+      }
+
       setPreview(rows.slice(0, 5))
       setRowsBuffer(rows)
-      toast.success(`ตรวจสอบและดึงข้อมูลจาก Google Sheet สำเร็จ (${rows.length} แถว)`)
+      toast.success(`ตรวจสอบและดึงข้อมูลจาก Google Sheet สำเร็จ (${rows.length.toLocaleString()} แถว)`)
     } catch (error: any) {
       console.error("[v0] Error fetching Google Sheet for comments:", error)
       toast.error(error?.message ?? "ไม่สามารถดึงข้อมูลจาก Google Sheet ได้")
@@ -663,7 +721,11 @@ export function CommentsImport({ onComplete }: CommentsImportProps) {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          รองรับลิงก์ที่ลงท้ายด้วย <code>/edit?gid=</code> หรือ <code>/export?format=csv</code> ระบบจะตรวจสอบคอลัมน์และเตรียมไฟล์ให้อัตโนมัติ
+          รองรับลิงก์ที่ลงท้ายด้วย <code>/edit?gid=</code> หรือ <code>/export?format=csv</code> ระบบจะใช้ Google Sheets API v4 เพื่อดึงข้อมูลทั้งหมด (รองรับมากกว่า 20,000 แถว)
+          <br />
+          <span className="text-muted-foreground">
+            💡 หาก Google Sheet ไม่ใช่ public อาจต้องตั้งค่า "Anyone with the link can view" หรือใช้ Google Sheets API key
+          </span>
         </p>
       </div>
 
@@ -771,8 +833,10 @@ export function CommentsImport({ onComplete }: CommentsImportProps) {
                 {preview.map((row, index) => (
                   <TableRow key={index}>
                     <TableCell className="font-mono text-xs">{row.file_name || "(ระบบจะสร้าง)"}</TableCell>
-                    <TableCell className="max-w-xs break-words text-xs text-blue-600">{row.post_link || "-"}</TableCell>
-                    <TableCell className="text-xs">{row.update_post || "-"}</TableCell>
+                    <TableCell className="max-w-[300px] truncate text-xs text-blue-600" title={row.post_link || "-"}>
+                      {row.post_link || "-"}
+                    </TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">{row.update_post || "-"}</TableCell>
                     <TableCell className="text-xs">
                       {row.kol_post_detial || row.kol_post_detail || "-"}
                       <br />

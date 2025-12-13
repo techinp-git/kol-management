@@ -404,7 +404,7 @@ export function CampaignDetailClient({ campaign: initialCampaign, posts: initial
                             })
                           : "-"}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">{formatBudget(post.kol_boost_budget)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatBudget(post.kol_budget)}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatBudget(post.boost_budget)}</TableCell>
                       <TableCell>
                         {post.url ? (

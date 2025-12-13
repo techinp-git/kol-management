@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -25,8 +25,10 @@ import {
   Smile,
   Meh,
   Frown,
+  Loader2,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import html2canvas from "html2canvas"
 
 interface DashboardData {
   primaryKPIs: {
@@ -79,6 +81,8 @@ export function KOLPerformanceDashboard() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const dashboardRef = useRef<HTMLDivElement>(null)
 
   const supabase = createClient()
 
@@ -293,6 +297,8 @@ export function KOLPerformanceDashboard() {
             id,
             campaign_id,
             kol_channel_id,
+            kol_budget,
+            boost_budget,
             kol_channels(
               id,
               kol_id,
@@ -343,6 +349,8 @@ export function KOLPerformanceDashboard() {
             id,
             campaign_id,
             kol_channel_id,
+            kol_budget,
+            boost_budget,
             kol_channels(
               id,
               kol_id,
@@ -438,14 +446,13 @@ export function KOLPerformanceDashboard() {
         samplePostMetrics: posts[0]?.post_metrics?.[0],
       })
 
-      // Calculate total cost from campaign_kols data we already fetched
+      // Calculate total cost from posts table: kol_budget + boost_budget
       let totalCost = 0
-      if (campaignKolsData && campaignKolsData.length > 0) {
-        totalCost = campaignKolsData.reduce(
-          (sum, ck) => sum + (parseFloat(ck.allocated_budget?.toString() || "0") || 0),
-          0
-        )
-      }
+      posts?.forEach((post) => {
+        const kolBudget = parseFloat(post.kol_budget?.toString() || "0") || 0
+        const boostBudget = parseFloat(post.boost_budget?.toString() || "0") || 0
+        totalCost += kolBudget + boostBudget
+      })
 
       // Get unique KOL IDs from posts
       const uniqueKolIds = new Set<string>()
@@ -676,6 +683,8 @@ export function KOLPerformanceDashboard() {
       const otherPercent = totalCommentsForMention > 0 ? (other / totalCommentsForMention) * 100 : 0
 
       // Calculate cost efficiency
+      // CPR = (kol_budget + boost_budget) / (reach_organic + reach_boost)
+      // totalReach already includes reach_organic + reach_boost from latest metrics
       const cpr = totalReach > 0 ? totalCost / totalReach : 0
       const cpe = totalEngagement > 0 ? totalCost / totalEngagement : 0
       const cpv = totalViews > 0 ? totalCost / totalViews : 0
@@ -743,9 +752,173 @@ export function KOLPerformanceDashboard() {
     }
   }
 
-  const handleExport = () => {
-    // TODO: Implement PDF/PNG export
-    alert("Export feature coming soon!")
+  const handleExport = async (format: 'png' | 'jpg' = 'png') => {
+    if (!dashboardRef.current || !dashboardData) {
+      alert("กรุณารอให้ dashboard โหลดข้อมูลเสร็จก่อน")
+      return
+    }
+
+    setExporting(true)
+    try {
+      // 16:9 aspect ratio dimensions (1920x1080 for standard slide)
+      const targetWidth = 1920
+      const targetHeight = 1080
+      
+      // Get the dashboard content element
+      const dashboardElement = dashboardRef.current
+      
+      // Get original dimensions
+      const originalRect = dashboardElement.getBoundingClientRect()
+      const originalWidth = originalRect.width
+      const originalHeight = dashboardElement.scrollHeight
+      
+      // Calculate scale to fit in 16:9 container
+      const padding = 60
+      const availableWidth = targetWidth - (padding * 2)
+      const availableHeight = targetHeight - (padding * 2)
+      
+      const scaleX = availableWidth / originalWidth
+      const scaleY = availableHeight / originalHeight
+      const scale = Math.min(scaleX, scaleY, 1) // Don't scale up, only down
+      
+      // Create a container with 16:9 aspect ratio
+      const exportContainer = document.createElement('div')
+      exportContainer.style.width = `${targetWidth}px`
+      exportContainer.style.height = `${targetHeight}px`
+      exportContainer.style.position = 'fixed'
+      exportContainer.style.top = '-9999px'
+      exportContainer.style.left = '-9999px'
+      exportContainer.style.backgroundColor = '#ffffff'
+      exportContainer.style.padding = `${padding}px`
+      exportContainer.style.boxSizing = 'border-box'
+      exportContainer.style.overflow = 'hidden'
+      exportContainer.style.zIndex = '9999'
+      
+      // Clone dashboard
+      const clonedContent = dashboardElement.cloneNode(true) as HTMLElement
+
+      // Helper: inline all computed styles into cloned elements (colors will be rgb)
+      const inlineComputedStyles = (element: Element) => {
+        if (!(element instanceof HTMLElement)) return
+        const computed = window.getComputedStyle(element)
+        
+        // Get all CSS properties and convert to inline styles
+        const importantProps = [
+          'color', 'backgroundColor', 'borderColor', 'borderTopColor', 'borderRightColor', 
+          'borderBottomColor', 'borderLeftColor', 'fontSize', 'fontWeight', 'fontFamily',
+          'padding', 'margin', 'borderWidth', 'borderStyle', 'borderRadius',
+          'width', 'height', 'display', 'flexDirection', 'gap', 'justifyContent', 'alignItems'
+        ]
+        
+        importantProps.forEach(prop => {
+          const value = computed.getPropertyValue(prop)
+          if (value) {
+            element.style.setProperty(prop, value, 'important')
+          }
+        })
+
+        // Fix positioning to avoid fixed/sticky issues
+        if (computed.position === 'fixed' || computed.position === 'sticky') {
+          element.style.position = 'relative'
+        }
+
+        // Recurse
+        Array.from(element.children).forEach(inlineComputedStyles)
+      }
+
+      inlineComputedStyles(clonedContent)
+
+      // Sanitize any remaining lab/oklch colors in inline styles
+      const sanitizeColors = (element: Element) => {
+        if (!(element instanceof HTMLElement)) return
+        const props = [
+          'color',
+          'backgroundColor',
+          'borderColor',
+          'borderTopColor',
+          'borderRightColor',
+          'borderBottomColor',
+          'borderLeftColor',
+        ]
+        props.forEach((prop) => {
+          const val = element.style.getPropertyValue(prop)
+          if (val && (val.includes('oklch') || val.includes('lab') || val.includes('lch'))) {
+            // fallback colors
+            const fallback =
+              prop.toLowerCase().includes('background') || prop.toLowerCase().includes('border')
+                ? 'rgb(255, 255, 255)'
+                : 'rgb(0, 0, 0)'
+            element.style.setProperty(prop, fallback, 'important')
+          }
+        })
+
+        // Also sanitize cssText directly
+        if (element.style.cssText && /(oklch|lab|lch)\(/i.test(element.style.cssText)) {
+          element.style.cssText = element.style.cssText.replace(/(oklch|lab|lch)\([^)]*\)/gi, 'rgb(0,0,0)')
+        }
+
+        Array.from(element.children).forEach(sanitizeColors)
+      }
+
+      sanitizeColors(clonedContent)
+
+      // Apply transform styles to cloned content
+      clonedContent.style.width = `${originalWidth}px`
+      clonedContent.style.height = `${originalHeight}px`
+      clonedContent.style.transform = `scale(${scale})`
+      clonedContent.style.transformOrigin = 'top left'
+      clonedContent.style.margin = '0'
+      clonedContent.style.padding = '0'
+      
+      exportContainer.appendChild(clonedContent)
+      document.body.appendChild(exportContainer)
+      
+      // Wait for fonts and images to load
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Remove any stylesheets inside exportContainer (we already inlined styles)
+      const styleNodes = exportContainer.querySelectorAll('style, link[rel="stylesheet"]')
+      styleNodes.forEach((node) => node.remove())
+
+      // Capture the container
+      const canvas = await html2canvas(exportContainer, {
+        width: targetWidth,
+        height: targetHeight,
+        scale: 2, // Higher quality (2x for retina)
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        allowTaint: false,
+        removeContainer: true,
+        foreignObjectRendering: false,
+      }).catch((error) => {
+        console.error('html2canvas error:', error)
+        throw new Error('Failed to export dashboard: ' + (error.message || 'Unknown error'))
+      })
+      
+      // Clean up
+      document.body.removeChild(exportContainer)
+      
+      // Convert to image
+      const imageFormat = format === 'jpg' ? 'image/jpeg' : 'image/png'
+      const quality = format === 'jpg' ? 0.95 : undefined
+      const dataUrl = canvas.toDataURL(imageFormat, quality)
+      
+      // Download
+      const link = document.createElement('a')
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
+      link.download = `kol-performance-dashboard-${timestamp}.${format}`
+      link.href = dataUrl
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+    } catch (error) {
+      console.error('Error exporting dashboard:', error)
+      alert('เกิดข้อผิดพลาดในการ export dashboard: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
@@ -756,10 +929,42 @@ export function KOLPerformanceDashboard() {
           <h1 className="text-3xl font-bold">KOL Performance Dashboard</h1>
           <p className="text-muted-foreground">ภาพรวมประสิทธิภาพของ KOL Performance</p>
         </div>
-        <Button onClick={handleExport} variant="outline">
-          <Download className="mr-2 h-4 w-4" />
-          Export Dashboard
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={() => handleExport('png')} 
+            variant="outline"
+            disabled={exporting || !dashboardData}
+          >
+            {exporting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Export PNG
+              </>
+            )}
+          </Button>
+          <Button 
+            onClick={() => handleExport('jpg')} 
+            variant="outline"
+            disabled={exporting || !dashboardData}
+          >
+            {exporting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Export JPG
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -859,7 +1064,7 @@ export function KOLPerformanceDashboard() {
       )}
 
       {!loading && dashboardData && (
-        <>
+        <div ref={dashboardRef} className="space-y-6">
           {/* Primary KPI Summary - Large Blue Cards */}
           <div>
             <h2 className="text-xl font-semibold mb-4">Primary KPI Summary</h2>
@@ -977,7 +1182,16 @@ export function KOLPerformanceDashboard() {
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Comment Sentiment</CardTitle>
+                <CardTitle className="flex items-center justify-between">
+                  <span>Comment Sentiment</span>
+                  <span className="text-sm font-normal text-muted-foreground">
+                    รวม: {(
+                      dashboardData.sentiment.brandMentionCount +
+                      dashboardData.sentiment.kolMentionCount +
+                      dashboardData.sentiment.otherCount
+                    ).toLocaleString()}
+                  </span>
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -1029,7 +1243,16 @@ export function KOLPerformanceDashboard() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Total BRAND Sentiment</CardTitle>
+                <CardTitle className="flex items-center justify-between">
+                  <span>Total BRAND Sentiment</span>
+                  <span className="text-sm font-normal text-muted-foreground">
+                    รวม: {(
+                      dashboardData.sentiment.positiveCount +
+                      dashboardData.sentiment.neutralCount +
+                      dashboardData.sentiment.negativeCount
+                    ).toLocaleString()}
+                  </span>
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -1123,7 +1346,7 @@ export function KOLPerformanceDashboard() {
               </div>
             </CardContent>
           </Card>
-        </>
+        </div>
       )}
 
       {!loading && !dashboardData && selectedAccount && (

@@ -39,7 +39,6 @@ type PostInfoRow = {
   kol_tier?: string
   follower?: string | number
   kol_budget?: string | number
-  kol_boost_budget?: string | number
 }
 
 type ImportResult = {
@@ -268,7 +267,6 @@ const REQUIRED_COLUMNS = [
 ]
 
 const OPTIONAL_COLUMNS = [
-  "kol_boost_budget",
   "post_url",
   "external_post_id",
   "caption",
@@ -301,7 +299,6 @@ const COLUMN_LABELS: Record<string, string> = {
   kol_tier: "kol_tier",
   follower: "follower",
   kol_budget: "kol_budget",
-  kol_boost_budget: "kol_boost_budget",
   boost_budget: "boost_budget",
   post_link: "post_link",
   post_url: "post_url",
@@ -329,6 +326,86 @@ const ALL_ALLOWED_COLUMNS = Array.from(new Set([...REQUIRED_COLUMNS, ...OPTIONAL
 
 const GOOGLE_SHEET_URL =
   "https://docs.google.com/spreadsheets/d/1_1D64wh00-FQUjGqB00zN-9LiHoPcbjgTjhUcVSfcMw/export?format=csv&gid=1829620904"
+
+// Check if a value looks like it should be an integer but has comma
+const detectCommaInInteger = (value: string, columnName: string): boolean => {
+  if (!value || !value.trim()) return false
+  
+  const trimmed = value.trim()
+  
+  // Check if value contains only digits, spaces, and commas (looks like a number with comma separator)
+  // Pattern: digits with optional comma separators (e.g., "1,000", "1,234,567")
+  const numberWithCommaPattern = /^\d{1,3}(,\d{3})+$/
+  
+  // If it matches number with comma pattern, it's likely a number that should not have comma
+  if (numberWithCommaPattern.test(trimmed)) {
+    return true
+  }
+  
+  // Also check if it has comma but looks like it should be an integer
+  if (trimmed.includes(",") && /^\d+[,\.]\d*$/.test(trimmed.replace(/\./g, ""))) {
+    return true
+  }
+  
+  return false
+}
+
+// Detect if CSV has comma issues (unequal column counts)
+const detectCSVIssues = (
+  text: string,
+  headers: string[],
+  rows?: PostInfoRow[],
+): { hasError: boolean; errors: string[] } => {
+  const errors: string[] = []
+  const lines = text.replace(/\r/g, "").trim().split("\n")
+  const expectedColumnCount = headers.length
+
+  // Check data rows - simple split by comma (for basic CSV without quoted values)
+  lines.slice(1).forEach((line, index) => {
+    if (!line.trim()) return // Skip empty lines
+
+    // Simple comma split (works for most cases)
+    const columnCount = line.split(",").length
+
+    // Check if column count significantly differs
+    if (Math.abs(columnCount - expectedColumnCount) > 1) {
+      errors.push(
+        `แถวที่ ${index + 2}: จำนวนคอลัมน์ไม่ตรงกัน (คาดหวัง ${expectedColumnCount} คอลัมน์ แต่พบ ${columnCount} คอลัมน์) - อาจมี comma (,) หลุดออกมาในข้อมูล หรือมี comma เกินในเซลล์ (ควรใส่ข้อมูลที่มี comma ใน double quotes "ข้อความ,ที่มีcomma")`,
+      )
+    }
+  })
+
+  // Check for comma in integer columns if rows are provided
+  if (rows) {
+    rows.forEach((row, index) => {
+      // Check all numeric-looking fields that might be integers
+      Object.entries(row).forEach(([columnName, value]) => {
+        if (typeof value === "string" && value.trim()) {
+          // Check columns that might be integers
+          const isLikelyIntegerColumn =
+            columnName.toLowerCase().includes("id") ||
+            columnName.toLowerCase().includes("count") ||
+            columnName.toLowerCase().includes("follower") ||
+            columnName.toLowerCase().includes("number") ||
+            columnName.toLowerCase().includes("num") ||
+            columnName.toLowerCase().includes("quantity") ||
+            columnName.toLowerCase().includes("qty")
+          
+          if (detectCommaInInteger(value, columnName)) {
+            if (isLikelyIntegerColumn || /^\d{1,3}(,\d{3})+$/.test(value.trim())) {
+              errors.push(
+                `แถวที่ ${index + 2}, คอลัมน์ "${columnName}": พบ comma (,) ในค่าที่ควรเป็นตัวเลขจำนวนเต็ม (${value.trim()}) - กรุณาลบ comma ออก (เช่น 1,000 ควรเป็น 1000)`,
+              )
+            }
+          }
+        }
+      })
+    })
+  }
+
+  // Only show first 10 errors to avoid overwhelming the user
+  return { hasError: errors.length > 0, errors: errors.slice(0, 10) }
+}
 
 export function PostInfoImport({ onComplete }: PostInfoImportProps) {
   const supabase = createBrowserClient()
@@ -394,6 +471,17 @@ export function PostInfoImport({ onComplete }: PostInfoImportProps) {
         throw new Error(`พบ post_date ไม่ถูกต้อง: ${limitedErrors}${suffix}`)
       }
 
+      // Check for comma issues in CSV files
+      if (isCSV) {
+        const { hasError: hasCommaError, errors: commaErrors } = detectCSVIssues(text, headers, normalizedRows)
+        if (hasCommaError) {
+          setSheetRowErrors([...postDateErrors, ...commaErrors])
+          const limitedErrors = commaErrors.slice(0, 3).join("; ")
+          const suffix = commaErrors.length > 3 ? " ..." : ""
+          throw new Error(`พบปัญหา comma (,) ในข้อมูล: ${limitedErrors}${suffix}`)
+        }
+      }
+
       setSheetRowErrors([])
       setPreview(normalizedRows.slice(0, 5))
       setFile(selected)
@@ -418,7 +506,7 @@ export function PostInfoImport({ onComplete }: PostInfoImportProps) {
       platform: string | null
       kol_tier: string | null
       follower: number | null
-      kol_boost_budget: number | null
+      kol_budget: number | null
       boost_budget: number | null
       post_link: string | null
       post_date: string | null
@@ -618,7 +706,7 @@ const validateSheetStructure = (
           platform: row.platform?.trim() || null,
           kol_tier: row.kol_tier?.trim() || null,
           follower: toNullableNumber(row.follower),
-          kol_budget: toNullableNumber(row.kol_budget ?? row.kol_boost_budget),
+          kol_budget: toNullableNumber(row.kol_budget),
           boost_budget: toNullableNumber(row.boost_budget),
           post_link: finalPostLink,
           post_date: finalPostDate,
@@ -737,6 +825,15 @@ const validateSheetStructure = (
         const limitedErrors = postDateErrors.slice(0, 5).join("; ")
         const suffix = postDateErrors.length > 5 ? " ..." : ""
         throw new Error(`พบ post_date ไม่ถูกต้อง: ${limitedErrors}${suffix}`)
+      }
+
+      // Check for comma issues
+      const { hasError: hasCommaError, errors: commaErrors } = detectCSVIssues(text, headers, normalizedRows)
+      if (hasCommaError) {
+        setSheetRowErrors([...postDateErrors, ...commaErrors])
+        const limitedErrors = commaErrors.slice(0, 5).join("; ")
+        const suffix = commaErrors.length > 5 ? " ..." : ""
+        throw new Error(`พบปัญหา comma (,) ในข้อมูล: ${limitedErrors}${suffix}`)
       }
 
       setSheetRowErrors([])

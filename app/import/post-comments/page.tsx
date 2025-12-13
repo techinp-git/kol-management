@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Progress } from "@/components/ui/progress"
 import { Download, RefreshCw, Trash2, Upload } from "lucide-react"
 import { CommentsImport } from "@/components/comments-import"
 import { cn } from "@/lib/utils"
@@ -17,6 +18,7 @@ type CommentsImportSummaryItem = {
   successCount: number
   failedCount: number
   lastImportDate: string | null
+  transferredCount: number
 }
 
 type CommentsImportDetailItem = {
@@ -61,6 +63,7 @@ export default function PostCommentsImportPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [transferringFile, setTransferringFile] = useState<string | null>(null)
   const [transferSummary, setTransferSummary] = useState<CommentsTransferSummary | null>(null)
+  const [transferProgress, setTransferProgress] = useState(0)
 
   const refreshSummary = async () => {
     try {
@@ -172,12 +175,50 @@ export default function PostCommentsImportPage() {
     try {
       setTransferringFile(fileName)
       setTransferSummary(null)
+      setTransferProgress(0)
 
-      const response = await fetch("/api/import-post-comments/transfer", {
+      // Get total count first for accurate progress calculation
+      const countRes = await fetch(`/api/import-post-comments?fileName=${encodeURIComponent(fileName)}`)
+      const countData = await countRes.json()
+      const allRows = countData?.rows ?? []
+      const totalRows = allRows.length
+      const initialTransferred = allRows.filter((row: any) => row.flag_use).length
+      const rowsToTransfer = totalRows - initialTransferred
+
+      if (rowsToTransfer === 0) {
+        toast.info("ไม่มีข้อมูลที่ต้องโอน")
+        setTransferringFile(null)
+        return
+      }
+
+      // Start transfer in background
+      const transferPromise = fetch("/api/import-post-comments/transfer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileName }),
       })
+
+      // Poll for progress by checking transferred count
+      const progressInterval = setInterval(async () => {
+        try {
+          const progressRes = await fetch(`/api/import-post-comments?fileName=${encodeURIComponent(fileName)}`)
+          const progressData = await progressRes.json()
+          const currentRows = progressData?.rows ?? []
+          const currentTransferred = currentRows.filter((row: any) => row.flag_use).length
+          const transferredNow = currentTransferred - initialTransferred
+          
+          // Calculate progress: (transferred / total to transfer) * 90% (leave 10% for final processing)
+          const progress = Math.min(90, (transferredNow / rowsToTransfer) * 90)
+          setTransferProgress(Math.round(progress * 10) / 10)
+        } catch (error) {
+          console.error("[v0] Error checking progress:", error)
+        }
+      }, 500) // Check every 500ms
+
+      const response = await transferPromise
+
+      clearInterval(progressInterval)
+      setTransferProgress(100)
 
       let data: any = {}
       try {
@@ -206,13 +247,17 @@ export default function PostCommentsImportPage() {
       setTransferSummary(summary)
       toast.success(`เพิ่มคอมเมนต์ใหม่ ${summary.inserted} รายการ`)
 
+      // Refresh both summary and detail to show updated status
       await refreshSummary()
       await refreshDetail(fileName)
     } catch (error) {
       console.error("[v0] Failed to transfer import_post_comments batch:", error)
       toast.error(error instanceof Error ? error.message : "ไม่สามารถโอนข้อมูลไปยัง comments ได้")
+      setTransferProgress(0)
     } finally {
       setTransferringFile(null)
+      // Keep progress at 100% for a moment before resetting
+      setTimeout(() => setTransferProgress(0), 1000)
     }
   }
 
@@ -222,11 +267,16 @@ export default function PostCommentsImportPage() {
     if (Number.isNaN(parsed.getTime())) {
       return value
     }
-    return parsed.toLocaleString()
+    // Format as dd/mm/yyyy, hh:mm:ss (24-hour format)
+    const day = parsed.getDate().toString().padStart(2, "0")
+    const month = (parsed.getMonth() + 1).toString().padStart(2, "0")
+    const year = parsed.getFullYear().toString()
+    const hours = parsed.getHours().toString().padStart(2, "0")
+    const minutes = parsed.getMinutes().toString().padStart(2, "0")
+    const seconds = parsed.getSeconds().toString().padStart(2, "0")
+    return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`
   }
 
-  const isTransferDisabled =
-    !selectedFile || details.length === 0 || isLoadingDetail || transferringFile === selectedFile
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
@@ -279,7 +329,7 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
       <Card>
         <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <CardTitle>ประวัติการนำเข้า (ล่าสุด 1000 รายการ)</CardTitle>
+            <CardTitle>ประวัติการนำเข้า</CardTitle>
             <CardDescription>คลิกชื่อไฟล์เพื่อดูรายละเอียด และสามารถลบชุดข้อมูลทั้งไฟล์ได้</CardDescription>
           </div>
         </CardHeader>
@@ -293,13 +343,15 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
                     <TableHead className="text-center">ทั้งหมด</TableHead>
                     <TableHead className="text-center text-green-600">ปกติ</TableHead>
                     <TableHead className="text-center text-red-600">มีข้อผิดพลาด</TableHead>
+                    <TableHead className="text-center text-blue-600">โอนแล้ว</TableHead>
+                    <TableHead>Actions</TableHead>
                     <TableHead>ล่าสุด</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {summary.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                         {isLoadingSummary ? "กำลังโหลด..." : "ยังไม่มีประวัติการนำเข้า"}
                       </TableCell>
                     </TableRow>
@@ -308,35 +360,58 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
                     <TableRow
                       key={item.fileName}
                       className={cn(
-                        "group cursor-pointer",
+                        "group",
                         selectedFile === item.fileName ? "bg-black/5 hover:bg-black/10" : "hover:bg-muted",
                       )}
-                      onClick={() => setSelectedFile(item.fileName)}
                     >
-                      <TableCell className="max-w-xs break-words font-medium">{item.fileName}</TableCell>
+                      <TableCell 
+                        className="max-w-xs break-words font-medium cursor-pointer"
+                        onClick={() => setSelectedFile(item.fileName)}
+                      >
+                        {item.fileName}
+                      </TableCell>
                       <TableCell className="text-center">{item.totalRows}</TableCell>
                       <TableCell className="text-center text-green-600">{item.successCount}</TableCell>
                       <TableCell className="text-center text-red-600">{item.failedCount}</TableCell>
-                      <TableCell className="space-y-1">
-                        <div>{formatDate(item.lastImportDate) ?? "-"}</div>
-                        <div
-                          role="button"
-                          tabIndex={0}
-                          className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 transition-colors hover:border-red-300 hover:bg-red-100"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            handleDeleteBatch(item.fileName)
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault()
+                      <TableCell className="text-center text-blue-600 font-medium">
+                        {item.transferredCount || 0}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          {(item.transferredCount || 0) < item.totalRows && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleTransferBatch(item.fileName)
+                              }}
+                              disabled={transferringFile === item.fileName || item.totalRows === 0}
+                              className="h-8 bg-black text-[#FFFF00] hover:bg-black/90"
+                            >
+                              {transferringFile === item.fileName ? (
+                                <RefreshCw className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Upload className="mr-1 h-3.5 w-3.5" />
+                              )}
+                              โอน
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={(e) => {
+                              e.stopPropagation()
                               handleDeleteBatch(item.fileName)
-                            }
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          ลบชุดนี้
+                            }}
+                            disabled={isDeleting}
+                            className="h-8"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>{formatDate(item.lastImportDate) ?? "-"}</div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -372,18 +447,39 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
                     <span className="max-w-[70%] break-words text-base font-semibold">{item.fileName}</span>
                     <Badge>{item.totalRows} รายการ</Badge>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <div className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">
                       ปกติ: <span className="font-semibold">{item.successCount}</span>
                     </div>
                     <div className="rounded-md bg-red-50 px-2 py-1 text-red-600">
                       ข้อผิดพลาด: <span className="font-semibold">{item.failedCount}</span>
                     </div>
+                    <div className="rounded-md bg-blue-50 px-2 py-1 text-blue-600">
+                      โอนแล้ว: <span className="font-semibold">{item.transferredCount || 0}</span>
+                    </div>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
                     อัปเดตล่าสุด: {formatDate(item.lastImportDate) ?? "—"}
                   </p>
-                  <div className="mt-3">
+                  <div className="mt-3 flex gap-2">
+                    {(item.transferredCount || 0) < item.totalRows && (
+                      <Button
+                        size="sm"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleTransferBatch(item.fileName)
+                        }}
+                        disabled={transferringFile === item.fileName || item.totalRows === 0}
+                        className="flex-1 bg-black text-[#FFFF00] hover:bg-black/90"
+                      >
+                        {transferringFile === item.fileName ? (
+                          <RefreshCw className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Upload className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        โอนเข้า comments
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="destructive"
@@ -392,10 +488,9 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
                         handleDeleteBatch(item.fileName)
                       }}
                       disabled={isDeleting}
-                      className="h-8 w-full px-2"
+                      className="h-8 px-2"
                     >
-                      <Trash2 className="mr-1 h-3.5 w-3.5" />
-                      ลบชุดนี้
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -412,26 +507,21 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
               <CardTitle>รายละเอียดไฟล์: {selectedFile}</CardTitle>
               <CardDescription>ตรวจสอบคอมเมนต์และสถานะที่บันทึกไว้ในแต่ละแถว</CardDescription>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => refreshDetail(selectedFile)} disabled={isLoadingDetail}>
-                <RefreshCw className={cn("mr-2 h-4 w-4", isLoadingDetail && "animate-spin")} />
-                รีเฟรชรายละเอียด
-              </Button>
-              <Button
-                onClick={() => selectedFile && handleTransferBatch(selectedFile)}
-                disabled={isTransferDisabled}
-                className="bg-black text-[#FFFF00] hover:bg-black/90"
-              >
-                {transferringFile === selectedFile ? (
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="mr-2 h-4 w-4" />
-                )}
-                โอนเข้า comments
-              </Button>
-            </div>
+            <Button variant="outline" onClick={() => refreshDetail(selectedFile)} disabled={isLoadingDetail}>
+              <RefreshCw className={cn("mr-2 h-4 w-4", isLoadingDetail && "animate-spin")} />
+              รีเฟรชรายละเอียด
+            </Button>
           </CardHeader>
           <CardContent className="space-y-4">
+            {transferringFile && transferProgress > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">กำลังโอนข้อมูลไปยัง comments...</span>
+                  <span className="font-medium">{Math.round(transferProgress)}%</span>
+                </div>
+                <Progress value={transferProgress} className="h-2" />
+              </div>
+            )}
             {transferSummary && transferSummary.fileName === selectedFile && (
               <Alert>
                 <AlertDescription className="space-y-2 text-sm">
@@ -477,13 +567,13 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Post Link</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead>Update Date</TableHead>
-                      <TableHead>รายละเอียดโพสต์</TableHead>
                       <TableHead>ข้อความ</TableHead>
+                      <TableHead>Post Link</TableHead>
+                      <TableHead>รายละเอียดโพสต์</TableHead>
                       <TableHead>Sentiment</TableHead>
                       <TableHead>Tags</TableHead>
-                      <TableHead>Status</TableHead>
                       <TableHead>Note</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -497,12 +587,6 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
                     )}
                     {details.map((row) => (
                       <TableRow key={row.id}>
-                        <TableCell className="break-all text-xs text-blue-600">{row.post_link ?? "-"}</TableCell>
-                        <TableCell className="text-xs">{row.update_post ?? "-"}</TableCell>
-                        <TableCell className="text-xs">{row.kol_post_detail ?? "-"}</TableCell>
-                        <TableCell className="text-xs">{row.post_message ?? "-"}</TableCell>
-                        <TableCell className="text-xs">{row.sentiment ?? "-"}</TableCell>
-                        <TableCell className="text-xs">{row.tags?.join(", ") ?? "-"}</TableCell>
                         <TableCell>
                           <Badge
                             variant={
@@ -518,6 +602,12 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
                             {row.status ? row.status.toUpperCase() : "N/A"}
                           </Badge>
                         </TableCell>
+                        <TableCell className="text-xs">{row.update_post ?? "-"}</TableCell>
+                        <TableCell className="text-xs">{row.post_message ?? "-"}</TableCell>
+                        <TableCell className="break-all text-xs text-blue-600">{row.post_link ?? "-"}</TableCell>
+                        <TableCell className="text-xs">{row.kol_post_detail ?? "-"}</TableCell>
+                        <TableCell className="text-xs">{row.sentiment ?? "-"}</TableCell>
+                        <TableCell className="text-xs">{row.tags?.join(", ") ?? "-"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{row.error_message ?? "—"}</TableCell>
                       </TableRow>
                     ))}
@@ -535,7 +625,6 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
                 details.map((row) => (
                   <div key={row.id} className="rounded-lg border bg-card p-4 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="break-all text-xs text-blue-600">{row.post_link ?? "-"}</div>
                       <Badge
                         variant={
                           row.status === "queued"
@@ -550,6 +639,7 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
                       >
                         {row.status ? row.status.toUpperCase() : "N/A"}
                       </Badge>
+                      <div className="break-all text-xs text-blue-600">{row.post_link ?? "-"}</div>
                     </div>
                     <div className="mt-3 space-y-2 text-sm">
                       <div>
@@ -557,12 +647,12 @@ https://www.facebook.com/somepage/posts/12345,2024-01-16,รีวิวสิ�
                         <p className="font-medium">{row.update_post ?? "-"}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">รายละเอียดโพสต์</p>
-                        <p className="font-medium">{row.kol_post_detail ?? "-"}</p>
-                      </div>
-                      <div>
                         <p className="text-xs text-muted-foreground">ข้อความ</p>
                         <p className="font-medium">{row.post_message ?? "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">รายละเอียดโพสต์</p>
+                        <p className="font-medium">{row.kol_post_detail ?? "-"}</p>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                         <div>Sentiment: {row.sentiment ?? "-"}</div>

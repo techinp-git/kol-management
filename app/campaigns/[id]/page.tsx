@@ -84,7 +84,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       url,
       status,
       boost_budget,
-      kol_boost_budget,
+      kol_budget,
       kol_channels (
         id,
         channel_type,
@@ -112,7 +112,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
       url: post.url ?? "",
       status: post.status ?? "published",
       boost_budget: post.boost_budget ? Number(post.boost_budget) : null,
-      kol_boost_budget: post.kol_boost_budget ? Number(post.kol_boost_budget) : null,
+      kol_budget: post.kol_budget ? Number(post.kol_budget) : null,
       platform: post.kol_channels?.channel_type ?? null,
       kol_channel: post.kol_channels
         ? {

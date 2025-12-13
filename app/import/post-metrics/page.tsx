@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Progress } from "@/components/ui/progress"
 import { Download, RefreshCw, Trash2, Upload } from "lucide-react"
 import { PostMetricsImport } from "@/components/post-metrics-import"
 import { cn } from "@/lib/utils"
@@ -17,6 +18,7 @@ type MetricsImportSummaryItem = {
   successCount: number
   failedCount: number
   lastImportDate: string | null
+  transferredCount: number
 }
 
 type MetricsImportDetailItem = {
@@ -69,6 +71,7 @@ export default function PostMetricsImportPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [transferringFile, setTransferringFile] = useState<string | null>(null)
   const [transferSummary, setTransferSummary] = useState<MetricsTransferSummary | null>(null)
+  const [transferProgress, setTransferProgress] = useState(0)
 
   const refreshSummary = async () => {
     try {
@@ -180,12 +183,24 @@ export default function PostMetricsImportPage() {
     try {
       setTransferringFile(fileName)
       setTransferSummary(null)
+      setTransferProgress(0)
+
+      // Simulate progress while waiting for response
+      const progressInterval = setInterval(() => {
+        setTransferProgress((prev) => {
+          if (prev >= 90) return prev
+          return prev + Math.random() * 5
+        })
+      }, 200)
 
       const response = await fetch("/api/import-post-metrics/transfer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileName }),
       })
+
+      clearInterval(progressInterval)
+      setTransferProgress(100)
 
       let data: any = {}
       try {
@@ -222,8 +237,11 @@ export default function PostMetricsImportPage() {
     } catch (error) {
       console.error("[v0] Failed to transfer import_post_metrics batch:", error)
       toast.error(error instanceof Error ? error.message : "ไม่สามารถโอนข้อมูลไปยัง post_metrics ได้")
+      setTransferProgress(0)
     } finally {
       setTransferringFile(null)
+      // Reset progress after a short delay to show 100%
+      setTimeout(() => setTransferProgress(0), 1000)
     }
   }
 
@@ -243,8 +261,6 @@ export default function PostMetricsImportPage() {
     return parsed.toLocaleString()
   }
 
-  const isTransferDisabled =
-    !selectedFile || details.length === 0 || isLoadingDetail || transferringFile === selectedFile
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
@@ -302,6 +318,24 @@ https://www.tiktok.com/@creator/video/6789,2024-01-16,18000,0,15000,0,850,140,60
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {transferringFile && (
+            <Alert className="border-blue-200 bg-blue-50">
+              <AlertDescription className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <p className="font-medium text-blue-900">
+                    กำลังถ่ายโอนข้อมูลจากไฟล์ <span className="font-semibold">{transferringFile}</span>
+                  </p>
+                  <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
+                </div>
+                <div className="space-y-2">
+                  <Progress value={transferProgress} className="h-2" />
+                  <p className="text-xs text-blue-700">
+                    {Math.round(transferProgress)}% - กรุณารอสักครู่ ระบบกำลังประมวลผลข้อมูล...
+                  </p>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="hidden md:block">
             <div className="overflow-auto rounded-lg border">
               <Table>
@@ -311,13 +345,15 @@ https://www.tiktok.com/@creator/video/6789,2024-01-16,18000,0,15000,0,850,140,60
                     <TableHead className="text-center">ทั้งหมด</TableHead>
                     <TableHead className="text-center text-green-600">ปกติ</TableHead>
                     <TableHead className="text-center text-red-600">มีข้อผิดพลาด</TableHead>
+                    <TableHead className="text-center text-blue-600">โอนแล้ว</TableHead>
+                    <TableHead>Actions</TableHead>
                     <TableHead>ล่าสุด</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {summary.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                         {isLoadingSummary ? "กำลังโหลด..." : "ยังไม่มีประวัติการนำเข้า"}
                       </TableCell>
                     </TableRow>
@@ -326,37 +362,58 @@ https://www.tiktok.com/@creator/video/6789,2024-01-16,18000,0,15000,0,850,140,60
                     <TableRow
                       key={item.fileName}
                       className={cn(
-                        "group cursor-pointer",
+                        "group",
                         selectedFile === item.fileName ? "bg-black/5 hover:bg-black/10" : "hover:bg-muted",
                       )}
-                      onClick={() => setSelectedFile(item.fileName)}
                     >
-                      <TableCell className="max-w-xs break-words font-medium">{item.fileName}</TableCell>
+                      <TableCell 
+                        className="max-w-xs break-words font-medium cursor-pointer"
+                        onClick={() => setSelectedFile(item.fileName)}
+                      >
+                        {item.fileName}
+                      </TableCell>
                       <TableCell className="text-center">{item.totalRows}</TableCell>
                       <TableCell className="text-center text-green-600">{item.successCount}</TableCell>
                       <TableCell className="text-center text-red-600">{item.failedCount}</TableCell>
-                      <TableCell className="space-y-1">
-                        <div>{formatDate(item.lastImportDate) ?? "-"}</div>
-                        <div>
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 transition-colors hover:border-red-300 hover:bg-red-100"
-                            onClick={(event) => {
-                              event.stopPropagation()
+                      <TableCell className="text-center text-blue-600 font-medium">
+                        {item.transferredCount || 0}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          {(item.transferredCount || 0) < item.totalRows && (
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleTransferBatch(item.fileName)
+                              }}
+                              disabled={transferringFile === item.fileName || item.totalRows === 0}
+                              className="h-8 bg-black text-[#FFFF00] hover:bg-black/90"
+                            >
+                              {transferringFile === item.fileName ? (
+                                <RefreshCw className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Upload className="mr-1 h-3.5 w-3.5" />
+                              )}
+                              โอน
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={(e) => {
+                              e.stopPropagation()
                               handleDeleteBatch(item.fileName)
                             }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault()
-                                handleDeleteBatch(item.fileName)
-                              }
-                            }}
+                            disabled={isDeleting}
+                            className="h-8"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                            ลบชุดนี้
-                          </div>
+                          </Button>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>{formatDate(item.lastImportDate) ?? "-"}</div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -392,18 +449,39 @@ https://www.tiktok.com/@creator/video/6789,2024-01-16,18000,0,15000,0,850,140,60
                     <span className="max-w-[70%] break-words text-base font-semibold">{item.fileName}</span>
                     <Badge>{item.totalRows} รายการ</Badge>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <div className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">
                       ปกติ: <span className="font-semibold">{item.successCount}</span>
                     </div>
                     <div className="rounded-md bg-red-50 px-2 py-1 text-red-600">
                       ข้อผิดพลาด: <span className="font-semibold">{item.failedCount}</span>
                     </div>
+                    <div className="rounded-md bg-blue-50 px-2 py-1 text-blue-600">
+                      โอนแล้ว: <span className="font-semibold">{item.transferredCount || 0}</span>
+                    </div>
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
                     อัปเดตล่าสุด: {formatDate(item.lastImportDate) ?? "—"}
                   </p>
-                  <div className="mt-3">
+                  <div className="mt-3 flex gap-2">
+                    {(item.transferredCount || 0) < item.totalRows && (
+                      <Button
+                        size="sm"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleTransferBatch(item.fileName)
+                        }}
+                        disabled={transferringFile === item.fileName || item.totalRows === 0}
+                        className="flex-1 bg-black text-[#FFFF00] hover:bg-black/90"
+                      >
+                        {transferringFile === item.fileName ? (
+                          <RefreshCw className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Upload className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        โอนเข้า post-metrics
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="destructive"
@@ -412,10 +490,9 @@ https://www.tiktok.com/@creator/video/6789,2024-01-16,18000,0,15000,0,850,140,60
                         handleDeleteBatch(item.fileName)
                       }}
                       disabled={isDeleting}
-                      className="h-8 w-full px-2"
+                      className="h-8 px-2"
                     >
-                      <Trash2 className="mr-1 h-3.5 w-3.5" />
-                      ลบชุดนี้
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -432,27 +509,31 @@ https://www.tiktok.com/@creator/video/6789,2024-01-16,18000,0,15000,0,850,140,60
               <CardTitle>รายละเอียดไฟล์: {selectedFile}</CardTitle>
               <CardDescription>ตรวจสอบตัวเลข Metrics และสถานะในแต่ละแถว</CardDescription>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => refreshDetail(selectedFile)} disabled={isLoadingDetail}>
-                <RefreshCw className={cn("mr-2 h-4 w-4", isLoadingDetail && "animate-spin")} />
-                รีเฟรชรายละเอียด
-              </Button>
-              <Button
-                onClick={() => selectedFile && handleTransferBatch(selectedFile)}
-                disabled={isTransferDisabled}
-                className="bg-black text-[#FFFF00] hover:bg-black/90"
-              >
-                {transferringFile === selectedFile ? (
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="mr-2 h-4 w-4" />
-                )}
-                โอนเข้า post_metrics
-              </Button>
-            </div>
+            <Button variant="outline" onClick={() => refreshDetail(selectedFile)} disabled={isLoadingDetail}>
+              <RefreshCw className={cn("mr-2 h-4 w-4", isLoadingDetail && "animate-spin")} />
+              รีเฟรชรายละเอียด
+            </Button>
           </CardHeader>
           <CardContent className="space-y-4">
-            {transferSummary && transferSummary.fileName === selectedFile && (
+            {transferringFile && transferringFile === selectedFile && (
+              <Alert className="border-blue-200 bg-blue-50">
+                <AlertDescription className="space-y-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium text-blue-900">
+                      กำลังถ่ายโอนข้อมูลจากไฟล์ <span className="font-semibold">{transferringFile}</span>
+                    </p>
+                    <RefreshCw className="h-4 w-4 animate-spin text-blue-600" />
+                  </div>
+                  <div className="space-y-2">
+                    <Progress value={transferProgress} className="h-2" />
+                    <p className="text-xs text-blue-700">
+                      {Math.round(transferProgress)}% - กรุณารอสักครู่ ระบบกำลังประมวลผลข้อมูล...
+                    </p>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+            {transferSummary && !transferringFile && transferSummary.fileName === selectedFile && (
               <Alert>
                 <AlertDescription className="space-y-2 text-sm">
                   <p>

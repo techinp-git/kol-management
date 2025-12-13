@@ -13,7 +13,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { data: profile } = await supabase
+    // Use admin client to query profiles to bypass RLS
+    let adminClient
+    try {
+      adminClient = createAdminClient()
+    } catch (adminError: any) {
+      console.error("[master-post-intention] Failed to create admin client:", adminError)
+      // Continue with regular client if admin client fails
+    }
+
+    const profileClient = adminClient || supabase
+    const { data: profile } = await profileClient
       .from("profiles")
       .select("role")
       .eq("id", user.id)
@@ -69,14 +79,45 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { data: profile } = await supabase
+    // Use admin client to query profiles to bypass RLS
+    let adminClient
+    try {
+      adminClient = createAdminClient()
+    } catch (adminError: any) {
+      console.error("[master-post-intention] Failed to create admin client:", adminError)
+      return NextResponse.json({ 
+        error: "Server configuration error",
+        details: adminError.message 
+      }, { status: 500 })
+    }
+
+    const { data: profile, error: profileError } = await adminClient
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single()
 
-    if (profile?.role !== "admin") {
-      return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 })
+    if (profileError) {
+      console.error("[master-post-intention] Error fetching profile:", profileError)
+      return NextResponse.json({ 
+        error: "Failed to verify user role",
+        details: profileError.message 
+      }, { status: 500 })
+    }
+
+    console.log("[master-post-intention] User role check:", {
+      userId: user.id,
+      role: profile?.role,
+      isAdmin: profile?.role === "admin",
+      isAnalyst: profile?.role === "analyst",
+      allowed: profile?.role === "admin" || profile?.role === "analyst",
+    })
+
+    if (profile?.role !== "admin" && profile?.role !== "analyst") {
+      return NextResponse.json({ 
+        error: "Forbidden: Admin access required",
+        details: `Current role: ${profile?.role || "null"}. Admin or Analyst role required.`
+      }, { status: 403 })
     }
 
     const body = await request.json()
@@ -97,7 +138,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const adminClient = createAdminClient()
+    // adminClient is already created above
 
     const { data, error } = await adminClient
       .from("master_post_intention")

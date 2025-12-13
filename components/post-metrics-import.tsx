@@ -867,8 +867,10 @@ export function PostMetricsImport({ onComplete }: PostMetricsImportProps) {
                   return (
                     <TableRow key={index}>
                       <TableCell className="font-mono text-xs">{row.file_name || "-"}</TableCell>
-                      <TableCell className="max-w-xs break-words text-xs text-blue-600">{row.post_link || "-"}</TableCell>
-                      <TableCell className="text-xs">{row.update_post || "-"}</TableCell>
+                      <TableCell className="max-w-[300px] truncate text-xs text-blue-600" title={row.post_link || "-"}>
+                        {row.post_link || "-"}
+                      </TableCell>
+                      <TableCell className="text-xs whitespace-nowrap">{row.update_post || "-"}</TableCell>
                       <TableCell className="text-xs">
                         {impressionOrg.toLocaleString()} / {impressionBoost.toLocaleString()}
                       </TableCell>

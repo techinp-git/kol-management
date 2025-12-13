@@ -10,15 +10,22 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const fileName = searchParams.get("fileName")
     const limitParam = searchParams.get("limit")
-    const limit = limitParam ? Number.parseInt(limitParam, 10) : 1000
+    // Use high limit or no limit for summary (we need all data to calculate accurate counts)
+    const limit = limitParam ? Number.parseInt(limitParam, 10) : undefined
 
     if (fileName) {
-      const { data, error } = await supabase
+      // For specific file, fetch all rows (no limit) to show complete data
+      let query = supabase
         .from("import_post_comments")
         .select(COMMENTS_COLUMNS)
         .eq("file_name", fileName)
         .order("import_date", { ascending: false })
-        .limit(limit)
+      
+      if (limit) {
+        query = query.limit(limit)
+      }
+
+      const { data, error } = await query
 
       if (error) {
         console.error("[v0] Error fetching import_post_comments rows:", error)
@@ -28,58 +35,128 @@ export async function GET(request: Request) {
       return NextResponse.json({ rows: data ?? [] })
     }
 
-    const { data, error } = await supabase
-      .from("import_post_comments")
-      .select("file_name, import_date, status")
-      .order("import_date", { ascending: false })
-      .limit(limit)
+    // For summary, we need to get accurate counts per file_name
+    // Supabase PostgREST has a default limit of 1000, so we use pagination to fetch all rows
+    // or use aggregate queries per file_name
+    
+    // First, get all unique file names with their latest import_date
+    // Use a high limit and pagination to ensure we get all unique file names
+    const allFileNames = new Set<string>()
+    let page = 0
+    const pageSize = 1000
+    let hasMore = true
+    
+    while (hasMore) {
+      const { data: fileData, error: fileError } = await supabase
+        .from("import_post_comments")
+        .select("file_name, import_date")
+        .not("file_name", "is", null)
+        .order("import_date", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1)
 
-    if (error) {
-      console.error("[v0] Error fetching import_post_comments summary:", error)
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      if (fileError) {
+        console.error("[v0] Error fetching file names:", fileError)
+        return NextResponse.json({ error: fileError.message }, { status: 400 })
+      }
+
+      if (!fileData || fileData.length === 0) {
+        hasMore = false
+        break
+      }
+
+      fileData.forEach((row) => {
+        if (row.file_name && row.file_name.trim()) {
+          allFileNames.add(row.file_name.trim())
+        }
+      })
+
+      // If we got less than pageSize, we've reached the end
+      if (fileData.length < pageSize) {
+        hasMore = false
+      } else {
+        page++
+      }
     }
 
-    const summaryMap = new Map<
-      string,
-      {
-        fileName: string
-        totalRows: number
-        lastImportDate: string | null
-        successCount: number
-        failedCount: number
-      }
-    >()
+    console.log(`[v0] Found ${allFileNames.size} unique file names`)
 
-    data?.forEach((row) => {
-      const key = row.file_name
-      const current = summaryMap.get(key) ?? {
-        fileName: key,
-        totalRows: 0,
-        lastImportDate: null as string | null,
-        successCount: 0,
-        failedCount: 0,
+    // Now calculate summary for each file using aggregate queries
+    const summaryPromises = Array.from(allFileNames).map(async (fileName) => {
+      // Get total count
+      const { count: totalCount, error: totalError } = await supabase
+        .from("import_post_comments")
+        .select("*", { count: "exact", head: true })
+        .eq("file_name", fileName)
+
+      if (totalError) {
+        console.error(`[v0] Error counting total for ${fileName}:`, totalError)
+        return null
       }
 
-      current.totalRows += 1
-      if (!current.lastImportDate || (row.import_date && row.import_date > current.lastImportDate)) {
-        current.lastImportDate = row.import_date
+      // Get success count
+      const { count: successCount, error: successError } = await supabase
+        .from("import_post_comments")
+        .select("*", { count: "exact", head: true })
+        .eq("file_name", fileName)
+        .in("status", ["queued", "processed", "success"])
+
+      if (successError) {
+        console.error(`[v0] Error counting success for ${fileName}:`, successError)
       }
 
-      const status = row.status?.toLowerCase()
-      if (status === "queued" || status === "processed" || status === "success") {
-        current.successCount += 1
-      } else if (status === "invalid" || status === "failed" || status === "error") {
-        current.failedCount += 1
+      // Get failed count
+      const { count: failedCount, error: failedError } = await supabase
+        .from("import_post_comments")
+        .select("*", { count: "exact", head: true })
+        .eq("file_name", fileName)
+        .in("status", ["invalid", "failed", "error"])
+
+      if (failedError) {
+        console.error(`[v0] Error counting failed for ${fileName}:`, failedError)
       }
 
-      summaryMap.set(key, current)
+      // Get latest import_date
+      const { data: latestData, error: latestError } = await supabase
+        .from("import_post_comments")
+        .select("import_date")
+        .eq("file_name", fileName)
+        .order("import_date", { ascending: false })
+        .limit(1)
+
+      if (latestError) {
+        console.error(`[v0] Error getting latest date for ${fileName}:`, latestError)
+      }
+
+      // Get transferred count (flag_use = true or status = 'processed')
+      const { count: transferredCount, error: transferredError } = await supabase
+        .from("import_post_comments")
+        .select("*", { count: "exact", head: true })
+        .eq("file_name", fileName)
+        .eq("flag_use", true)
+
+      if (transferredError) {
+        console.error(`[v0] Error counting transferred for ${fileName}:`, transferredError)
+      }
+
+      return {
+        fileName,
+        totalRows: totalCount || 0,
+        lastImportDate: latestData?.[0]?.import_date || null,
+        successCount: successCount || 0,
+        failedCount: failedCount || 0,
+        transferredCount: transferredCount || 0,
+      }
     })
 
-    const summary = Array.from(summaryMap.values()).sort((a, b) => {
-      if (!a.lastImportDate || !b.lastImportDate) return 0
-      return a.lastImportDate > b.lastImportDate ? -1 : 1
-    })
+    const summaryResults = await Promise.all(summaryPromises)
+    const summary = summaryResults
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .sort((a, b) => {
+        if (!a.lastImportDate || !b.lastImportDate) return 0
+        return a.lastImportDate > b.lastImportDate ? -1 : 1
+      })
 
+    console.log(`[v0] Returning ${summary.length} summary items`)
     return NextResponse.json({ summary })
   } catch (error) {
     console.error("[v0] Unexpected error in GET /api/import-post-comments:", error)

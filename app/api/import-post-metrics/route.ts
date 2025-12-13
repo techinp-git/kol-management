@@ -39,46 +39,97 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    const summaryMap = new Map<
-      string,
-      {
-        fileName: string
-        totalRows: number
-        lastImportDate: string | null
-        successCount: number
-        failedCount: number
-      }
-    >()
-
+    // Get all unique file names first
+    const allFileNames = new Set<string>()
     data?.forEach((row) => {
-      const key = row.file_name
-      const current = summaryMap.get(key) ?? {
-        fileName: key,
-        totalRows: 0,
-        lastImportDate: null as string | null,
-        successCount: 0,
-        failedCount: 0,
+      if (row.file_name) {
+        allFileNames.add(row.file_name)
       }
-
-      current.totalRows += 1
-      if (!current.lastImportDate || (row.import_date && row.import_date > current.lastImportDate)) {
-        current.lastImportDate = row.import_date
-      }
-
-      const status = row.status?.toLowerCase()
-      if (status === "queued" || status === "processed" || status === "success") {
-        current.successCount += 1
-      } else if (status === "invalid" || status === "failed" || status === "error") {
-        current.failedCount += 1
-      }
-
-      summaryMap.set(key, current)
     })
 
-    const summary = Array.from(summaryMap.values()).sort((a, b) => {
-      if (!a.lastImportDate || !b.lastImportDate) return 0
-      return a.lastImportDate > b.lastImportDate ? -1 : 1
+    // Calculate summary with transferred count using aggregate queries
+    const summaryPromises = Array.from(allFileNames).map(async (fileName) => {
+      // Get total count
+      const { count: totalCount, error: totalError } = await supabase
+        .from("import_post_metrics")
+        .select("*", { count: "exact", head: true })
+        .eq("file_name", fileName)
+
+      if (totalError) {
+        console.error(`[v0] Error counting total for ${fileName}:`, totalError)
+        return null
+      }
+
+      // Get success count
+      const { count: successCount, error: successError } = await supabase
+        .from("import_post_metrics")
+        .select("*", { count: "exact", head: true })
+        .eq("file_name", fileName)
+        .in("status", ["queued", "processed", "success"])
+
+      if (successError) {
+        console.error(`[v0] Error counting success for ${fileName}:`, successError)
+      }
+
+      // Get failed count
+      const { count: failedCount, error: failedError } = await supabase
+        .from("import_post_metrics")
+        .select("*", { count: "exact", head: true })
+        .eq("file_name", fileName)
+        .in("status", ["invalid", "failed", "error"])
+
+      if (failedError) {
+        console.error(`[v0] Error counting failed for ${fileName}:`, failedError)
+      }
+
+      // Get transferred count (flag_use = true)
+      const { count: transferredCount, error: transferredError } = await supabase
+        .from("import_post_metrics")
+        .select("*", { count: "exact", head: true })
+        .eq("file_name", fileName)
+        .eq("flag_use", true)
+
+      if (transferredError) {
+        console.error(`[v0] Error counting transferred for ${fileName}:`, transferredError)
+      }
+
+      // Get latest import_date
+      const { data: latestData, error: latestError } = await supabase
+        .from("import_post_metrics")
+        .select("import_date")
+        .eq("file_name", fileName)
+        .order("import_date", { ascending: false })
+        .limit(1)
+
+      if (latestError) {
+        console.error(`[v0] Error getting latest date for ${fileName}:`, latestError)
+      }
+
+      return {
+        fileName,
+        totalRows: totalCount || 0,
+        lastImportDate: latestData?.[0]?.import_date || null,
+        successCount: successCount || 0,
+        failedCount: failedCount || 0,
+        transferredCount: transferredCount || 0,
+      }
     })
+
+    const summaryResults = await Promise.all(summaryPromises)
+    const summaryMap = new Map<string, typeof summaryResults[0]>()
+    
+    summaryResults.forEach((item) => {
+      if (item) {
+        summaryMap.set(item.fileName, item)
+      }
+    })
+
+    const summary = Array.from(summaryMap.values())
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .sort((a, b) => {
+        if (!a.lastImportDate || !b.lastImportDate) return 0
+        return a.lastImportDate > b.lastImportDate ? -1 : 1
+      })
 
     return NextResponse.json({ summary })
   } catch (error) {

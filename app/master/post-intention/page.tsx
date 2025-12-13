@@ -114,23 +114,37 @@ export default function MasterPostIntentionPage() {
         : "/api/master-post-intention"
       const method = editingItem ? "PATCH" : "POST"
 
+      console.log("[master-post-intention] Submitting:", {
+        url,
+        method,
+        formData,
+        editingItem: editingItem?.id,
+      })
+
       const response = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       })
 
+      const responseData = await response.json()
+
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to save")
+        console.error("[master-post-intention] Error response:", {
+          status: response.status,
+          statusText: response.statusText,
+          data: responseData,
+        })
+        throw new Error(responseData.error || responseData.details || "Failed to save")
       }
 
+      console.log("[master-post-intention] Success:", responseData)
       toast.success(editingItem ? "อัปเดตสำเร็จ" : "สร้างสำเร็จ")
       handleCloseDialog()
       fetchData()
     } catch (error: any) {
-      console.error("Error saving:", error)
-      toast.error("ไม่สามารถบันทึกข้อมูลได้: " + error.message)
+      console.error("[master-post-intention] Error saving:", error)
+      toast.error("ไม่สามารถบันทึกข้อมูลได้: " + (error.message || "Unknown error"))
     }
   }
 

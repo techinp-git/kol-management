@@ -239,6 +239,7 @@ export async function POST(request: Request) {
         post_id: postId,
         captured_at: capturedAt,
         post_link: normalizedUrl,
+        file_name: row.file_name, // Store source file name for grouping
         impressions_organic: impressionsOrganic,
         impressions_boost: impressionsBoost,
         impressions: impressionsOrganic + impressionsBoost,

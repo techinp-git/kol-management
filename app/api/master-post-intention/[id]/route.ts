@@ -14,14 +14,45 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { data: profile } = await supabase
+    // Use admin client to query profiles to bypass RLS
+    let adminClient
+    try {
+      adminClient = createAdminClient()
+    } catch (adminError: any) {
+      console.error("[master-post-intention] Failed to create admin client:", adminError)
+      return NextResponse.json({ 
+        error: "Server configuration error",
+        details: adminError.message 
+      }, { status: 500 })
+    }
+
+    const { data: profile, error: profileError } = await adminClient
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single()
 
-    if (profile?.role !== "admin") {
-      return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 })
+    if (profileError) {
+      console.error("[master-post-intention] Error fetching profile:", profileError)
+      return NextResponse.json({ 
+        error: "Failed to verify user role",
+        details: profileError.message 
+      }, { status: 500 })
+    }
+
+    console.log("[master-post-intention] PATCH - User role check:", {
+      userId: user.id,
+      role: profile?.role,
+      isAdmin: profile?.role === "admin",
+      isAnalyst: profile?.role === "analyst",
+      allowed: profile?.role === "admin" || profile?.role === "analyst",
+    })
+
+    if (profile?.role !== "admin" && profile?.role !== "analyst") {
+      return NextResponse.json({ 
+        error: "Forbidden: Admin access required",
+        details: `Current role: ${profile?.role || "null"}. Admin or Analyst role required.`
+      }, { status: 403 })
     }
 
     const { id } = await params
@@ -45,7 +76,12 @@ export async function PATCH(
     if (is_active !== undefined) updateData.is_active = is_active
     updateData.updated_at = new Date().toISOString()
 
-    const adminClient = createAdminClient()
+    // adminClient is already created above
+    console.log("[master-post-intention] PATCH - Update data:", {
+      id,
+      updateData,
+      updateDataKeys: Object.keys(updateData)
+    })
 
     const { data, error } = await adminClient
       .from("master_post_intention")
@@ -55,8 +91,19 @@ export async function PATCH(
       .single()
 
     if (error) {
-      console.error("[v0] Error updating master post intention:", error)
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      console.error("[master-post-intention] Error updating master post intention:", {
+        error: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        id,
+        updateData
+      })
+      return NextResponse.json({ 
+        error: error.message,
+        code: error.code,
+        details: error.details 
+      }, { status: 400 })
     }
 
     if (!data) {
@@ -82,18 +129,37 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { data: profile } = await supabase
+    // Use admin client to query profiles to bypass RLS
+    let adminClient
+    try {
+      adminClient = createAdminClient()
+    } catch (adminError: any) {
+      console.error("[master-post-intention] Failed to create admin client:", adminError)
+      return NextResponse.json({ 
+        error: "Server configuration error",
+        details: adminError.message 
+      }, { status: 500 })
+    }
+
+    const { data: profile, error: profileError } = await adminClient
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single()
 
-    if (profile?.role !== "admin") {
+    if (profileError) {
+      console.error("[master-post-intention] Error fetching profile:", profileError)
+      return NextResponse.json({ 
+        error: "Failed to verify user role",
+        details: profileError.message 
+      }, { status: 500 })
+    }
+
+    if (profile?.role !== "admin" && profile?.role !== "analyst") {
       return NextResponse.json({ error: "Forbidden: Admin access required" }, { status: 403 })
     }
 
     const { id } = await params
-    const adminClient = createAdminClient()
 
     const { error } = await adminClient
       .from("master_post_intention")
