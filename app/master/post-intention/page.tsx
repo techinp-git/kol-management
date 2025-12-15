@@ -127,15 +127,55 @@ export default function MasterPostIntentionPage() {
         body: JSON.stringify(formData),
       })
 
-      const responseData = await response.json()
+      // Try to parse response as JSON, but handle empty or invalid responses
+      let responseData: any = {}
+      try {
+        const text = await response.text()
+        if (text && text.trim()) {
+          try {
+            responseData = JSON.parse(text)
+          } catch (parseError) {
+            console.error("[master-post-intention] Error parsing JSON response:", parseError, "Text:", text)
+            responseData = { error: text || "Invalid response from server" }
+          }
+        } else {
+          // Empty response body
+          responseData = { error: "Empty response from server" }
+        }
+      } catch (textError) {
+        console.error("[master-post-intention] Error reading response text:", textError)
+        responseData = { error: "Failed to read response" }
+      }
 
       if (!response.ok) {
         console.error("[master-post-intention] Error response:", {
           status: response.status,
           statusText: response.statusText,
+          contentType: response.headers.get("content-type"),
           data: responseData,
+          isEmpty: Object.keys(responseData).length === 0,
         })
-        throw new Error(responseData.error || responseData.details || "Failed to save")
+        
+        // Provide more helpful error message
+        let errorMessage = responseData.error 
+          || responseData.details 
+          || responseData.message
+        
+        // Handle specific error cases
+        if (response.status === 403) {
+          errorMessage = errorMessage || "คุณไม่มีสิทธิ์ในการบันทึกข้อมูลนี้"
+          if (responseData.details) {
+            errorMessage += ` (${responseData.details})`
+          }
+        } else if (response.status === 500) {
+          errorMessage = errorMessage || "เกิดข้อผิดพลาดจากเซิร์ฟเวอร์"
+        } else if (response.status === 401) {
+          errorMessage = errorMessage || "กรุณาเข้าสู่ระบบใหม่"
+        } else {
+          errorMessage = errorMessage || "ไม่สามารถบันทึกข้อมูลได้"
+        }
+        
+        throw new Error(errorMessage)
       }
 
       console.log("[master-post-intention] Success:", responseData)
@@ -143,8 +183,24 @@ export default function MasterPostIntentionPage() {
       handleCloseDialog()
       fetchData()
     } catch (error: any) {
-      console.error("[master-post-intention] Error saving:", error)
-      toast.error("ไม่สามารถบันทึกข้อมูลได้: " + (error.message || "Unknown error"))
+      console.error("[master-post-intention] Error saving:", {
+        error,
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      })
+      
+      // Provide more helpful error message
+      let errorMessage = "ไม่สามารถบันทึกข้อมูลได้"
+      if (error.message) {
+        errorMessage += ": " + error.message
+      } else if (error instanceof TypeError && error.message.includes("fetch")) {
+        errorMessage += ": ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้"
+      } else {
+        errorMessage += ": เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ"
+      }
+      
+      toast.error(errorMessage)
     }
   }
 

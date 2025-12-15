@@ -567,79 +567,174 @@ export function KOLPerformanceDashboard() {
       let commentsWithIntention: any[] = []
       
       if (postIds.length > 0) {
-        try {
-          // Try to use RPC function for JOIN query
-          const { data: commentsData, error: commentsError } = await supabase
-            .rpc('get_comments_with_intention', { p_post_ids: postIds })
-
-          if (commentsError) {
-            throw commentsError
-          }
-
-          console.log("[Dashboard] Comments with intention (RPC JOIN) result:", {
-            commentsCount: commentsData?.length || 0,
-            postIdsCount: postIds.length,
-          })
-
-          // Use data from RPC function (already joined with master_post_intention)
-          commentsWithIntention = commentsData || []
-        } catch (rpcError: any) {
-          // Fallback: fetch separately and join in memory (simulates JOIN)
-          console.warn("[Dashboard] RPC function not available or failed, using fallback JOIN:", rpcError?.message)
-          
-          const { data: commentsOnly, error: commentsOnlyError } = await supabase
+        // Always use fallback method with pagination to ensure we get ALL comments
+        // RPC function may have limits (1000 rows), so we'll use direct query with pagination
+        console.log("[Dashboard] Using fallback method with pagination to fetch all comments")
+        
+        // Fetch comments with pagination to get all records (Supabase default limit is 1000)
+        let commentsOnly: any[] = []
+        const pageSize = 1000
+        let currentPage = 0
+        let hasMore = true
+        let commentsOnlyError: any = null
+        
+        while (hasMore) {
+          const { data: pageComments, error: pageError } = await supabase
             .from("comments")
             .select("id, text, post_intention, post_id")
             .in("post_id", postIds)
-
-          const { data: masterIntentions, error: masterError } = await supabase
-            .from("master_post_intention")
-            .select("post_intention, group_intention, sentiment")
-            .eq("is_active", true)
-
-          if (commentsOnlyError) {
-            console.warn("[Dashboard] Error fetching comments:", commentsOnlyError)
+            .range(currentPage * pageSize, (currentPage + 1) * pageSize - 1)
+          
+          if (pageError) {
+            commentsOnlyError = pageError
+            console.warn("[Dashboard] Error fetching comments:", pageError)
+            break
           }
-          if (masterError) {
-            console.warn("[Dashboard] Error fetching master_post_intention:", masterError)
+          
+          if (pageComments && pageComments.length > 0) {
+            commentsOnly = [...commentsOnly, ...pageComments]
           }
-
-          // Create lookup map from master_post_intention (simulates JOIN)
-          const intentionMap = new Map<string, { group_intention: string; sentiment: string | null }>()
-          if (masterIntentions) {
-            masterIntentions.forEach((item) => {
-              if (item.post_intention) {
-                intentionMap.set(item.post_intention, {
-                  group_intention: item.group_intention || "Other",
-                  sentiment: item.sentiment || null,
-                })
-              }
-            })
+          
+          // Check if there are more rows
+          hasMore = pageComments && pageComments.length === pageSize
+          currentPage++
+          
+          // Safety limit: prevent infinite loops (max 100,000 rows)
+          if (currentPage >= 100) {
+            console.warn(`[Dashboard] Reached safety limit of ${currentPage} pages (${commentsOnly.length} comments), stopping pagination`)
+            break
           }
+        }
+        
+        // Count total comments fetched (before filtering)
+        const totalCommentsFetched = commentsOnly.length
+        const commentsWithPostIntentionCount = commentsOnly.filter((c) => c.post_intention).length
+        const commentsWithoutPostIntention = totalCommentsFetched - commentsWithPostIntentionCount
+        
+        console.log("[Dashboard] Comments fetched (fallback):", {
+          totalCommentsFetched,
+          commentsWithPostIntention: commentsWithPostIntentionCount,
+          commentsWithoutPostIntention,
+          pagesFetched: currentPage,
+        })
 
-          // Join comments with master_post_intention data (simulates: comments c INNER JOIN master_post_intention mp ON c.post_intention = mp.post_intention)
-          commentsWithIntention = (commentsOnly || [])
-            .filter((comment) => comment.post_intention && intentionMap.has(comment.post_intention)) // INNER JOIN filter
-            .map((comment) => {
-              const intentionData = intentionMap.get(comment.post_intention!)!
+        // Fetch master_post_intention (should be small, no pagination needed)
+        const { data: masterIntentions, error: masterError } = await supabase
+          .from("master_post_intention")
+          .select("post_intention, group_intention, sentiment")
+          .eq("is_active", true)
 
-              return {
-                comment_id: comment.id,
-                post_id: comment.post_id,
-                group_intention: intentionData.group_intention,
-                sentiment: intentionData.sentiment,
-              }
-            })
+        if (commentsOnlyError) {
+          console.warn("[Dashboard] Error fetching comments:", commentsOnlyError)
+        }
+        if (masterError) {
+          console.warn("[Dashboard] Error fetching master_post_intention:", masterError)
+        }
 
-          console.log("[Dashboard] Comments with intention (fallback JOIN) result:", {
-            totalComments: commentsWithIntention.length,
-            withGroupIntention: commentsWithIntention.filter((c) => c.group_intention !== "Other").length,
-            withSentiment: commentsWithIntention.filter((c) => c.sentiment).length,
+        // Create lookup map from master_post_intention (simulates JOIN)
+        const intentionMap = new Map<string, { group_intention: string; sentiment: string | null }>()
+        if (masterIntentions) {
+          masterIntentions.forEach((item) => {
+            if (item.post_intention) {
+              intentionMap.set(item.post_intention, {
+                group_intention: item.group_intention || "Other",
+                sentiment: item.sentiment || null,
+              })
+            }
           })
         }
+
+        // Join comments with master_post_intention data (simulates: comments c INNER JOIN master_post_intention mp ON c.post_intention = mp.post_intention)
+        const commentsWithPostIntention = (commentsOnly || []).filter((comment) => comment.post_intention)
+        const commentsMatchingIntention = commentsWithPostIntention.filter((comment) => intentionMap.has(comment.post_intention!))
+        const commentsNotMatchingIntention = commentsWithPostIntention.length - commentsMatchingIntention.length
+        
+        commentsWithIntention = commentsMatchingIntention
+          .map((comment) => {
+            const intentionData = intentionMap.get(comment.post_intention!)!
+
+            return {
+              comment_id: comment.id,
+              post_id: comment.post_id,
+              group_intention: intentionData.group_intention,
+              sentiment: intentionData.sentiment,
+            }
+          })
+
+        console.log("[Dashboard] Comments with intention (fallback JOIN) result:", {
+          totalCommentsFetched,
+          commentsWithPostIntention: commentsWithPostIntention.length,
+          commentsMatchingIntention: commentsWithIntention.length,
+          commentsNotMatchingIntention,
+          commentsWithoutPostIntention: totalCommentsFetched - commentsWithPostIntention.length,
+          withGroupIntention: commentsWithIntention.filter((c) => c.group_intention !== "Other").length,
+          withSentiment: commentsWithIntention.filter((c) => c.sentiment).length,
+          masterIntentionCount: intentionMap.size,
+        })
       } else {
         console.log("[Dashboard] No post IDs to fetch comments")
       }
+
+      // Count total comments from comments table (use this as the actual count)
+      let totalCommentsFromTable = 0
+      if (postIds.length > 0) {
+        // Count all comments (including those without post_intention)
+        // Use pagination to get accurate count for large datasets
+        const { count: totalCommentsCount, error: countError } = await supabase
+          .from("comments")
+          .select("*", { count: "exact", head: true })
+          .in("post_id", postIds)
+        
+        if (!countError && totalCommentsCount !== null) {
+          totalCommentsFromTable = totalCommentsCount
+        } else {
+          // Fallback: count manually with pagination if count query fails
+          let manualCount = 0
+          const countPageSize = 1000
+          let countPage = 0
+          let hasMoreCount = true
+          
+          while (hasMoreCount) {
+            const { data: countPageData, error: countPageError } = await supabase
+              .from("comments")
+              .select("id")
+              .in("post_id", postIds)
+              .range(countPage * countPageSize, (countPage + 1) * countPageSize - 1)
+            
+            if (countPageError) {
+              console.warn("[Dashboard] Error counting comments:", countPageError)
+              break
+            }
+            
+            if (countPageData) {
+              manualCount += countPageData.length
+            }
+            
+            hasMoreCount = countPageData && countPageData.length === countPageSize
+            countPage++
+            
+            if (countPage >= 100) {
+              break
+            }
+          }
+          
+          totalCommentsFromTable = manualCount
+        }
+      }
+
+      // Use totalCommentsFromTable as the actual comment count (more accurate than post_metrics)
+      const actualTotalComments = totalCommentsFromTable > 0 ? totalCommentsFromTable : totalComments
+
+      console.log("[Dashboard] Comments comparison:", {
+        totalCommentsFromMetrics: totalComments,
+        totalCommentsFromTable,
+        actualTotalComments,
+        commentsWithIntention: commentsWithIntention.length,
+        difference: totalCommentsFromTable - commentsWithIntention.length,
+        percentageWithIntention: totalCommentsFromTable > 0 
+          ? ((commentsWithIntention.length / totalCommentsFromTable) * 100).toFixed(2) + '%'
+          : '0%',
+      })
 
       // Calculate sentiment and group mention from joined data
       let brandMention = 0
@@ -682,6 +777,17 @@ export function KOLPerformanceDashboard() {
       const kolMentionPercent = totalCommentsForMention > 0 ? (kolMention / totalCommentsForMention) * 100 : 0
       const otherPercent = totalCommentsForMention > 0 ? (other / totalCommentsForMention) * 100 : 0
 
+      console.log("[Dashboard] Sentiment calculation:", {
+        totalCommentsForMention,
+        brandMention,
+        kolMention,
+        other,
+        positive,
+        negative,
+        neutral,
+        totalSentiment,
+      })
+
       // Calculate cost efficiency
       // CPR = (kol_budget + boost_budget) / (reach_organic + reach_boost)
       // totalReach already includes reach_organic + reach_boost from latest metrics
@@ -714,7 +820,7 @@ export function KOLPerformanceDashboard() {
           totalViews,
           totalEngagement,
           likes: totalLikes,
-          comments: totalComments,
+          comments: actualTotalComments, // Use actual count from comments table
           shares: totalShares,
           saves: totalSaves,
           postClicks,

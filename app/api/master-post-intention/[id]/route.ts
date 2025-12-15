@@ -28,30 +28,55 @@ export async function PATCH(
 
     const { data: profile, error: profileError } = await adminClient
       .from("profiles")
-      .select("role")
+      .select("id, role, email, full_name")
       .eq("id", user.id)
       .single()
 
     if (profileError) {
-      console.error("[master-post-intention] Error fetching profile:", profileError)
+      console.error("[master-post-intention] Error fetching profile:", {
+        error: profileError,
+        message: profileError.message,
+        code: profileError.code,
+        details: profileError.details,
+        userId: user.id,
+        userEmail: user.email,
+      })
       return NextResponse.json({ 
         error: "Failed to verify user role",
-        details: profileError.message 
+        details: profileError.message || "Profile not found or access denied"
       }, { status: 500 })
     }
 
     console.log("[master-post-intention] PATCH - User role check:", {
       userId: user.id,
+      userEmail: user.email,
+      profileId: profile?.id,
+      profileEmail: profile?.email,
+      profileName: profile?.full_name,
       role: profile?.role,
       isAdmin: profile?.role === "admin",
       isAnalyst: profile?.role === "analyst",
       allowed: profile?.role === "admin" || profile?.role === "analyst",
     })
 
-    if (profile?.role !== "admin" && profile?.role !== "analyst") {
+    if (!profile) {
+      console.error("[master-post-intention] Profile not found for user:", user.id)
       return NextResponse.json({ 
-        error: "Forbidden: Admin access required",
-        details: `Current role: ${profile?.role || "null"}. Admin or Analyst role required.`
+        error: "Profile not found",
+        details: "Your user profile could not be found. Please contact administrator."
+      }, { status: 404 })
+    }
+
+    if (profile.role !== "admin" && profile.role !== "analyst") {
+      console.warn("[master-post-intention] Access denied - insufficient role:", {
+        userId: user.id,
+        userEmail: user.email,
+        currentRole: profile.role,
+        requiredRoles: ["admin", "analyst"],
+      })
+      return NextResponse.json({ 
+        error: "Forbidden: Admin or Analyst access required",
+        details: `Current role: "${profile.role || "null"}". Required roles: admin or analyst. Please contact administrator to update your role.`
       }, { status: 403 })
     }
 
