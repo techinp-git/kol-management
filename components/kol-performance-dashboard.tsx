@@ -28,7 +28,7 @@ import {
   Loader2,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
-import html2canvas from "html2canvas"
+// import html2canvas from "html2canvas" // Temporarily disabled - module not found
 
 interface DashboardData {
   primaryKPIs: {
@@ -752,7 +752,11 @@ export function KOLPerformanceDashboard() {
     }
   }
 
+  // Temporarily disabled - html2canvas module not found
   const handleExport = async (format: 'png' | 'jpg' = 'png') => {
+    alert('Export function is temporarily disabled. Please install html2canvas package first.')
+    return
+    /* 
     if (!dashboardRef.current || !dashboardData) {
       alert("กรุณารอให้ dashboard โหลดข้อมูลเสร็จก่อน")
       return
@@ -919,6 +923,7 @@ export function KOLPerformanceDashboard() {
     } finally {
       setExporting(false)
     }
+    */
   }
 
   return (
@@ -929,7 +934,8 @@ export function KOLPerformanceDashboard() {
           <h1 className="text-3xl font-bold">KOL Performance Dashboard</h1>
           <p className="text-muted-foreground">ภาพรวมประสิทธิภาพของ KOL Performance</p>
         </div>
-        <div className="flex gap-2">
+        {/* Export buttons temporarily disabled - html2canvas module not found */}
+        {/* <div className="flex gap-2">
           <Button 
             onClick={() => handleExport('png')} 
             variant="outline"
@@ -964,7 +970,7 @@ export function KOLPerformanceDashboard() {
               </>
             )}
           </Button>
-        </div>
+        </div> */}
       </div>
 
       {/* Filters */}
