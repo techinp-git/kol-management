@@ -26,6 +26,9 @@ import {
   Meh,
   Frown,
   Loader2,
+  Building2,
+  FolderKanban,
+  Target,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 // import html2canvas from "html2canvas" // Temporarily disabled - module not found
@@ -1177,62 +1180,108 @@ export function KOLPerformanceDashboard() {
 
       {!loading && dashboardData && (
         <div ref={dashboardRef} className="space-y-6">
+          {/* Selected Filters Display - Beautiful Design (Replaces Primary KPI Summary Header) */}
+          <Card className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 dark:from-blue-800 dark:via-indigo-800 dark:to-purple-800 border-0 shadow-lg">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+                <BarChart2 className="h-6 w-6" />
+                Primary KPI Summary
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3">
+                {selectedAccount && (
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm rounded-lg border border-white/20 shadow-md hover:shadow-lg transition-shadow">
+                    <Building2 className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Account</span>
+                    <span className="text-sm font-bold text-blue-700 dark:text-blue-300">
+                      {accounts.find(a => a.id === selectedAccount)?.name || "Unknown"}
+                    </span>
+                  </div>
+                )}
+                {selectedProject && (
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm rounded-lg border border-white/20 shadow-md hover:shadow-lg transition-shadow">
+                    <FolderKanban className="h-4 w-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Project</span>
+                    <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300">
+                      {projects.find(p => p.id === selectedProject)?.name || "Unknown"}
+                    </span>
+                  </div>
+                )}
+                {selectedCampaign ? (
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm rounded-lg border border-white/20 shadow-md hover:shadow-lg transition-shadow">
+                    <Target className="h-4 w-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Campaign</span>
+                    <span className="text-sm font-bold text-purple-700 dark:text-purple-300">
+                      {campaigns.find(c => c.id === selectedCampaign)?.name || "Unknown"}
+                    </span>
+                  </div>
+                ) : selectedProject && (
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-white/70 dark:bg-gray-900/70 backdrop-blur-sm rounded-lg border border-white/10 shadow-sm">
+                    <Target className="h-4 w-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
+                    <span className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">Campaign</span>
+                    <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">All Campaigns</span>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Primary KPI Summary - Large Blue Cards */}
           <div>
-            <h2 className="text-xl font-semibold mb-4">Primary KPI Summary</h2>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <Card className="bg-blue-600 text-white border-blue-600">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
                   <CardTitle className="text-sm font-medium text-white">Post</CardTitle>
                   <BarChart2 className="h-4 w-4 text-blue-200" />
                 </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">{dashboardData.primaryKPIs.totalPosts.toLocaleString()}</div>
+                <CardContent className="px-4 pb-3 pt-1">
+                  <div className="text-3xl font-bold text-white">{dashboardData.primaryKPIs.totalPosts.toLocaleString()}</div>
                 </CardContent>
               </Card>
               <Card className="bg-blue-600 text-white border-blue-600">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
                   <CardTitle className="text-sm font-medium text-white">Follower</CardTitle>
                   <Users className="h-4 w-4 text-blue-200" />
                 </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">{dashboardData.primaryKPIs.totalFollowers.toLocaleString()}</div>
+                <CardContent className="px-4 pb-3 pt-1">
+                  <div className="text-3xl font-bold text-white">{dashboardData.primaryKPIs.totalFollowers.toLocaleString()}</div>
                 </CardContent>
               </Card>
               <Card className="bg-blue-600 text-white border-blue-600">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
                   <CardTitle className="text-sm font-medium text-white">Impression</CardTitle>
                   <Eye className="h-4 w-4 text-blue-200" />
                 </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">{dashboardData.primaryKPIs.totalImpressions.toLocaleString()}</div>
+                <CardContent className="px-4 pb-3 pt-1">
+                  <div className="text-3xl font-bold text-white">{dashboardData.primaryKPIs.totalImpressions.toLocaleString()}</div>
                 </CardContent>
               </Card>
               <Card className="bg-blue-600 text-white border-blue-600">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
                   <CardTitle className="text-sm font-medium text-white">Reach</CardTitle>
                   <TrendingUp className="h-4 w-4 text-blue-200" />
                 </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">{dashboardData.primaryKPIs.totalReach.toLocaleString()}</div>
+                <CardContent className="px-4 pb-3 pt-1">
+                  <div className="text-3xl font-bold text-white">{dashboardData.primaryKPIs.totalReach.toLocaleString()}</div>
                 </CardContent>
               </Card>
               <Card className="bg-blue-600 text-white border-blue-600">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
                   <CardTitle className="text-sm font-medium text-white">Total View</CardTitle>
                   <Eye className="h-4 w-4 text-blue-200" />
                 </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">{dashboardData.secondaryKPIs.totalViews.toLocaleString()}</div>
+                <CardContent className="px-4 pb-3 pt-1">
+                  <div className="text-3xl font-bold text-white">{dashboardData.secondaryKPIs.totalViews.toLocaleString()}</div>
                 </CardContent>
               </Card>
               <Card className="bg-blue-600 text-white border-blue-600">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
                   <CardTitle className="text-sm font-medium text-white">Total Engagement</CardTitle>
                   <TrendingUp className="h-4 w-4 text-blue-200" />
                 </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">{dashboardData.secondaryKPIs.totalEngagement.toLocaleString()}</div>
+                <CardContent className="px-4 pb-3 pt-1">
+                  <div className="text-3xl font-bold text-white">{dashboardData.secondaryKPIs.totalEngagement.toLocaleString()}</div>
                 </CardContent>
               </Card>
             </div>
