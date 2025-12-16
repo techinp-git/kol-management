@@ -97,7 +97,7 @@ async function testConnection() {
     }
 
     // Test 4: Check other tables
-    const tables = ['accounts', 'kols', 'campaigns', 'posts', 'projects']
+    const tables = ['accounts', 'kols', 'campaigns', 'posts', 'projects', 'post_metrics']
     console.log('\n4️⃣  Checking other tables...')
     
     for (const table of tables) {
@@ -107,9 +107,36 @@ async function testConnection() {
       
       if (error) {
         console.log(`   ❌ ${table}: ${error.message}`)
+        if (error.code === 'PGRST116') {
+          console.log(`      💡 Table "${table}" might not exist. Check if migrations have been run.`)
+        } else if (error.message?.includes('fetch failed')) {
+          console.log(`      ⚠️  Network error when accessing "${table}"`)
+        }
       } else {
         console.log(`   ✅ ${table}: OK`)
       }
+    }
+
+    // Test 4.5: Check post_metrics columns specifically
+    console.log('\n4️⃣.5️⃣  Checking post_metrics columns...')
+    const { data: sampleMetric, error: metricError } = await supabase
+      .from('post_metrics')
+      .select('impressions_organic, impressions_boost, reach_organic, reach_boost, post_clicks, link_clicks, retweets')
+      .limit(1)
+    
+    if (metricError) {
+      if (metricError.code === '42703' || metricError.message?.includes('column')) {
+        console.log('   ⚠️  Missing columns in post_metrics table')
+        console.log('   💡 Run migration: scripts/add_post_metrics_columns.sql')
+        console.log(`   Error: ${metricError.message}`)
+      } else if (metricError.message?.includes('fetch failed')) {
+        console.log('   ⚠️  Network error when accessing post_metrics')
+        console.log(`   Error: ${metricError.message}`)
+      } else {
+        console.log(`   ❌ post_metrics query error: ${metricError.message}`)
+      }
+    } else {
+      console.log('   ✅ post_metrics table has all required columns')
     }
 
     // Test 5: Check RLS policies

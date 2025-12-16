@@ -622,58 +622,58 @@ export function KOLPerformanceDashboard() {
         })
 
         // Fetch master_post_intention (should be small, no pagination needed)
-        const { data: masterIntentions, error: masterError } = await supabase
-          .from("master_post_intention")
-          .select("post_intention, group_intention, sentiment")
-          .eq("is_active", true)
+          const { data: masterIntentions, error: masterError } = await supabase
+            .from("master_post_intention")
+            .select("post_intention, group_intention, sentiment")
+            .eq("is_active", true)
 
-        if (commentsOnlyError) {
-          console.warn("[Dashboard] Error fetching comments:", commentsOnlyError)
-        }
-        if (masterError) {
-          console.warn("[Dashboard] Error fetching master_post_intention:", masterError)
-        }
+          if (commentsOnlyError) {
+            console.warn("[Dashboard] Error fetching comments:", commentsOnlyError)
+          }
+          if (masterError) {
+            console.warn("[Dashboard] Error fetching master_post_intention:", masterError)
+          }
 
-        // Create lookup map from master_post_intention (simulates JOIN)
-        const intentionMap = new Map<string, { group_intention: string; sentiment: string | null }>()
-        if (masterIntentions) {
-          masterIntentions.forEach((item) => {
-            if (item.post_intention) {
-              intentionMap.set(item.post_intention, {
-                group_intention: item.group_intention || "Other",
-                sentiment: item.sentiment || null,
-              })
-            }
-          })
-        }
+          // Create lookup map from master_post_intention (simulates JOIN)
+          const intentionMap = new Map<string, { group_intention: string; sentiment: string | null }>()
+          if (masterIntentions) {
+            masterIntentions.forEach((item) => {
+              if (item.post_intention) {
+                intentionMap.set(item.post_intention, {
+                  group_intention: item.group_intention || "Other",
+                  sentiment: item.sentiment || null,
+                })
+              }
+            })
+          }
 
-        // Join comments with master_post_intention data (simulates: comments c INNER JOIN master_post_intention mp ON c.post_intention = mp.post_intention)
+          // Join comments with master_post_intention data (simulates: comments c INNER JOIN master_post_intention mp ON c.post_intention = mp.post_intention)
         const commentsWithPostIntention = (commentsOnly || []).filter((comment) => comment.post_intention)
         const commentsMatchingIntention = commentsWithPostIntention.filter((comment) => intentionMap.has(comment.post_intention!))
         const commentsNotMatchingIntention = commentsWithPostIntention.length - commentsMatchingIntention.length
         
         commentsWithIntention = commentsMatchingIntention
-          .map((comment) => {
-            const intentionData = intentionMap.get(comment.post_intention!)!
+            .map((comment) => {
+              const intentionData = intentionMap.get(comment.post_intention!)!
 
-            return {
-              comment_id: comment.id,
-              post_id: comment.post_id,
-              group_intention: intentionData.group_intention,
-              sentiment: intentionData.sentiment,
-            }
-          })
+              return {
+                comment_id: comment.id,
+                post_id: comment.post_id,
+                group_intention: intentionData.group_intention,
+                sentiment: intentionData.sentiment,
+              }
+            })
 
-        console.log("[Dashboard] Comments with intention (fallback JOIN) result:", {
+          console.log("[Dashboard] Comments with intention (fallback JOIN) result:", {
           totalCommentsFetched,
           commentsWithPostIntention: commentsWithPostIntention.length,
           commentsMatchingIntention: commentsWithIntention.length,
           commentsNotMatchingIntention,
           commentsWithoutPostIntention: totalCommentsFetched - commentsWithPostIntention.length,
-          withGroupIntention: commentsWithIntention.filter((c) => c.group_intention !== "Other").length,
-          withSentiment: commentsWithIntention.filter((c) => c.sentiment).length,
+            withGroupIntention: commentsWithIntention.filter((c) => c.group_intention !== "Other").length,
+            withSentiment: commentsWithIntention.filter((c) => c.sentiment).length,
           masterIntentionCount: intentionMap.size,
-        })
+          })
       } else {
         console.log("[Dashboard] No post IDs to fetch comments")
       }
@@ -747,6 +747,11 @@ export function KOLPerformanceDashboard() {
       let negative = 0
       let neutral = 0
 
+      // แยก sentiment สำหรับ Brand เท่านั้น
+      let brandPositive = 0
+      let brandNegative = 0
+      let brandNeutral = 0
+
       commentsWithIntention.forEach((comment) => {
         const groupIntention = comment.group_intention || "Other"
         const sentiment = comment.sentiment
@@ -754,13 +759,21 @@ export function KOLPerformanceDashboard() {
         // Count by group_intention
         if (groupIntention === "Brand") {
           brandMention++
+          // นับ sentiment เฉพาะ Brand
+          if (sentiment === "Positive") {
+            brandPositive++
+          } else if (sentiment === "Negative") {
+            brandNegative++
+          } else {
+            brandNeutral++
+          }
         } else if (groupIntention === "KOL") {
           kolMention++
         } else {
           other++
         }
 
-        // Count by sentiment
+        // Count by sentiment (สำหรับทั้งหมด - ใช้สำหรับการแสดงผลอื่นๆ ถ้ามี)
         if (sentiment === "Positive") {
           positive++
         } else if (sentiment === "Negative") {
@@ -770,6 +783,13 @@ export function KOLPerformanceDashboard() {
         }
       })
 
+      // คำนวณ percentage สำหรับ Brand sentiment
+      const totalBrandSentiment = brandPositive + brandNegative + brandNeutral
+      const brandPositivePercent = totalBrandSentiment > 0 ? (brandPositive / totalBrandSentiment) * 100 : 0
+      const brandNeutralPercent = totalBrandSentiment > 0 ? (brandNeutral / totalBrandSentiment) * 100 : 0
+      const brandNegativePercent = totalBrandSentiment > 0 ? (brandNegative / totalBrandSentiment) * 100 : 0
+
+      // คำนวณ percentage สำหรับ sentiment ทั้งหมด (ถ้ายังใช้อยู่)
       const totalSentiment = positive + negative + neutral
       const positivePercent = totalSentiment > 0 ? (positive / totalSentiment) * 100 : 0
       const neutralPercent = totalSentiment > 0 ? (neutral / totalSentiment) * 100 : 0
@@ -785,6 +805,12 @@ export function KOLPerformanceDashboard() {
         brandMention,
         kolMention,
         other,
+        // Brand sentiment
+        brandPositive,
+        brandNeutral,
+        brandNegative,
+        totalBrandSentiment,
+        // All sentiment (for reference)
         positive,
         negative,
         neutral,
@@ -837,12 +863,13 @@ export function KOLPerformanceDashboard() {
           kolMentionCount: kolMention,
           other: otherPercent,
           otherCount: other,
-          positive: positivePercent,
-          positiveCount: positive,
-          neutral: neutralPercent,
-          neutralCount: neutral,
-          negative: negativePercent,
-          negativeCount: negative,
+          // ใช้ Brand sentiment แทน sentiment ทั้งหมด
+          positive: brandPositivePercent,
+          positiveCount: brandPositive,
+          neutral: brandNeutralPercent,
+          neutralCount: brandNeutral,
+          negative: brandNegativePercent,
+          negativeCount: brandNegative,
         },
         costEfficiency: {
           totalCost,
@@ -1057,11 +1084,11 @@ export function KOLPerformanceDashboard() {
               </>
             ) : (
               <>
-                <Download className="mr-2 h-4 w-4" />
+          <Download className="mr-2 h-4 w-4" />
                 Export PNG
               </>
             )}
-          </Button>
+        </Button>
           <Button 
             onClick={() => handleExport('jpg')} 
             variant="outline"

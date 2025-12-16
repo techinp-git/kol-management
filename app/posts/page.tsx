@@ -132,25 +132,77 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
   let latestMetricsByPostId = new Map<string, any>()
 
   if (postIds.length > 0) {
-    const {
-      data: metricsRows,
-      error: metricsError,
-    } = await supabase
-      .from("post_metrics")
-      .select("*")
-      .in("post_id", postIds)
-      // sort ให้ post_id ก่อน แล้วค่อย captured_at desc
-      .order("post_id", { ascending: true })
-      .order("captured_at", { ascending: false })
+    try {
+      // Filter out any invalid post IDs
+      const validPostIds = postIds.filter((id: any) => id && typeof id === 'string' && id.length > 0)
+      
+      if (validPostIds.length === 0) {
+        console.warn("[v0] No valid post IDs to fetch metrics for")
+      } else {
+        const {
+          data: metricsRows,
+          error: metricsError,
+        } = await supabase
+          .from("post_metrics")
+          .select("*")
+          .in("post_id", validPostIds)
+          // sort ให้ post_id ก่อน แล้วค่อย captured_at desc
+          .order("post_id", { ascending: true })
+          .order("captured_at", { ascending: false })
 
-    if (metricsError) {
-      console.error("[v0] Error fetching metrics:", metricsError)
-    } else if (metricsRows) {
-      for (const row of metricsRows) {
-        if (!latestMetricsByPostId.has(row.post_id)) {
-          latestMetricsByPostId.set(row.post_id, row)
+        if (metricsError) {
+          // Check if this is a network error or a query error
+          const errorMessage = metricsError?.message || String(metricsError) || "Unknown error"
+          const isNetworkError = errorMessage.includes("fetch failed") || 
+                                 errorMessage.includes("NetworkError") ||
+                                 errorMessage.includes("Failed to fetch") ||
+                                 errorMessage.includes("ECONNREFUSED") ||
+                                 errorMessage.includes("ETIMEDOUT")
+          
+          if (isNetworkError) {
+            console.warn("[v0] Network error fetching metrics (continuing without metrics):", {
+              message: errorMessage,
+              code: metricsError?.code || "NETWORK_ERROR",
+              postIdsCount: validPostIds.length,
+            })
+          } else {
+            // This is likely a query/RLS error
+            console.error("[v0] Error fetching metrics:", {
+              message: errorMessage,
+              code: metricsError?.code || "QUERY_ERROR",
+              details: metricsError?.details || "No details",
+              hint: metricsError?.hint || "No hint",
+              postIdsCount: validPostIds.length,
+            })
+          }
+          // Continue execution even if metrics fetch fails - posts will show without metrics
+        } else if (metricsRows) {
+          for (const row of metricsRows) {
+            if (row && row.post_id && !latestMetricsByPostId.has(row.post_id)) {
+              latestMetricsByPostId.set(row.post_id, row)
+            }
+          }
+          console.log(`[v0] Loaded ${latestMetricsByPostId.size} post metrics for ${validPostIds.length} posts`)
+        } else {
+          console.log(`[v0] No metrics found for ${validPostIds.length} posts`)
         }
       }
+    } catch (err: any) {
+      const errorMessage = err?.message || String(err) || "Unknown error"
+      const isNetworkError = errorMessage.includes("fetch failed") || 
+                             errorMessage.includes("NetworkError") ||
+                             errorMessage.includes("Failed to fetch")
+      
+      if (isNetworkError) {
+        console.warn("[v0] Network error fetching metrics (continuing without metrics):", errorMessage)
+      } else {
+        console.error("[v0] Unexpected error fetching metrics:", {
+          message: errorMessage,
+          name: err?.name,
+          stack: err?.stack,
+        })
+      }
+      // Continue execution - posts will show without metrics
     }
   }
 
