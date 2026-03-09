@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { FileText, Download, Loader2, ChevronDown, ChevronUp } from "lucide-react"
 import {
   Table,
@@ -72,9 +72,9 @@ export default function KOLPostDetailDashboard({
   const supabase = createClient()
   const [selectedAccount, setSelectedAccount] = useState<string>("")
   const [selectedProject, setSelectedProject] = useState<string>("")
-  const [selectedCampaign, setSelectedCampaign] = useState<string>("")
-  const [selectedChannel, setSelectedChannel] = useState<string>("all")
-  const [selectedPost, setSelectedPost] = useState<string>("all")
+  const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([])
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([])
+  const [selectedPosts, setSelectedPosts] = useState<string[]>([])
   const [accounts, setAccounts] = useState(initialAccounts)
   const [projects, setProjects] = useState(initialProjects)
   const [campaigns, setCampaigns] = useState(initialCampaigns)
@@ -83,6 +83,18 @@ export default function KOLPostDetailDashboard({
   const [error, setError] = useState<string | null>(null)
   const [debugInfo, setDebugInfo] = useState<any>(null)
   const [isDebugExpanded, setIsDebugExpanded] = useState(false)
+
+  // Dropdown open states
+  const [accountDropdownOpen, setAccountDropdownOpen] = useState(false)
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
+  const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false)
+  const [channelDropdownOpen, setChannelDropdownOpen] = useState(false)
+  const [postDropdownOpen, setPostDropdownOpen] = useState(false)
+  const accountDropdownRef = useRef<HTMLDivElement>(null)
+  const projectDropdownRef = useRef<HTMLDivElement>(null)
+  const campaignDropdownRef = useRef<HTMLDivElement>(null)
+  const channelDropdownRef = useRef<HTMLDivElement>(null)
+  const postDropdownRef = useRef<HTMLDivElement>(null)
 
   // Table data
   const [channelLevelData, setChannelLevelData] = useState<ChannelLevelRow[]>([])
@@ -113,8 +125,9 @@ export default function KOLPostDetailDashboard({
         setProjects(initialProjects)
       }
       setSelectedProject("")
-      setSelectedCampaign("")
-      setSelectedPost("")
+      setSelectedCampaigns([])
+      setSelectedChannels([])
+      setSelectedPosts([])
     }
     fetchProjects()
   }, [selectedAccount, initialProjects, supabase])
@@ -137,34 +150,77 @@ export default function KOLPostDetailDashboard({
       } else {
         setCampaigns(initialCampaigns)
       }
-      setSelectedCampaign("")
-      setSelectedPost("")
+      setSelectedCampaigns([])
+      setSelectedPosts([])
     }
     fetchCampaigns()
   }, [selectedProject, initialCampaigns, supabase])
 
-  // Fetch posts based on selected campaign
+  // Fetch posts based on selected campaigns + filter by channels (with pagination)
   useEffect(() => {
     const fetchPosts = async () => {
-      if (selectedCampaign) {
-        const { data, error } = await supabase
-          .from("posts")
-          .select("id, caption, external_post_id, campaign_id")
-          .eq("campaign_id", selectedCampaign)
-          .order("created_at", { ascending: false })
-        if (error) {
-          console.error("Error fetching posts:", error)
-          setPosts([])
-        } else {
-          setPosts(data || [])
+      if (selectedCampaigns.length > 0) {
+        let allPosts: any[] = []
+        const pageSize = 1000
+        let page = 0
+        let hasMore = true
+
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from("posts")
+            .select("id, caption, external_post_id, campaign_id, kol_channels(channel_type, kols(id, name))")
+            .in("campaign_id", selectedCampaigns)
+            .order("created_at", { ascending: false })
+            .range(page * pageSize, (page + 1) * pageSize - 1)
+
+          if (error) {
+            console.error("Error fetching posts:", error)
+            break
+          }
+          if (data && data.length > 0) {
+            allPosts = [...allPosts, ...data]
+          }
+          hasMore = (data?.length || 0) === pageSize
+          page++
+          if (page >= 50) break
         }
+
+        // Filter by selected channels
+        if (selectedChannels.length > 0) {
+          allPosts = allPosts.filter((p: any) => selectedChannels.includes(p.kol_channels?.channel_type))
+        }
+
+        setPosts(allPosts)
       } else {
         setPosts([])
       }
-      setSelectedPost("")
+      setSelectedPosts([])
     }
     fetchPosts()
-  }, [selectedCampaign, supabase])
+  }, [selectedCampaigns, selectedChannels, supabase])
+
+  // Close dropdowns on click outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (accountDropdownRef.current && !accountDropdownRef.current.contains(e.target as Node)) {
+        setAccountDropdownOpen(false)
+      }
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) {
+        setProjectDropdownOpen(false)
+      }
+      if (campaignDropdownRef.current && !campaignDropdownRef.current.contains(e.target as Node)) {
+        setCampaignDropdownOpen(false)
+      }
+      if (channelDropdownRef.current && !channelDropdownRef.current.contains(e.target as Node)) {
+        setChannelDropdownOpen(false)
+      }
+      if (postDropdownRef.current && !postDropdownRef.current.contains(e.target as Node)) {
+        setPostDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   // Fetch and process data
   const fetchPostDetailData = useCallback(async () => {
@@ -183,9 +239,9 @@ export default function KOLPostDetailDashboard({
       console.log("[Post Detail] Starting fetch with filters:", {
         account: selectedAccount,
         project: selectedProject,
-        campaign: selectedCampaign,
-        channel: selectedChannel,
-        post: selectedPost,
+        campaigns: selectedCampaigns,
+        channels: selectedChannels,
+        posts: selectedPosts,
       })
 
       // 1. Get relevant campaign IDs based on filters
@@ -207,8 +263,8 @@ export default function KOLPostDetailDashboard({
         campaignsQuery = campaignsQuery.eq("project_id", selectedProject)
       }
 
-      if (selectedCampaign) {
-        campaignsQuery = campaignsQuery.eq("id", selectedCampaign)
+      if (selectedCampaigns.length > 0) {
+        campaignsQuery = campaignsQuery.in("id", selectedCampaigns)
       }
 
       const { data: campaignsData, error: campaignsError } = await campaignsQuery
@@ -310,8 +366,8 @@ export default function KOLPostDetailDashboard({
           )
         `)
 
-      if (selectedPost && selectedPost !== "all") {
-        postsQuery = postsQuery.eq("id", selectedPost)
+      if (selectedPosts.length > 0 && selectedPosts.length < posts.length) {
+        postsQuery = postsQuery.in("id", selectedPosts)
       } else if (kolChannelIds.length > 0) {
         // Get posts from KOL channels in these campaigns (includes posts with or without campaign_id)
         postsQuery = postsQuery.in("kol_channel_id", kolChannelIds)
@@ -335,15 +391,14 @@ export default function KOLPostDetailDashboard({
 
       // Filter by channel and campaign client-side
       let filteredPosts = (postsData || []).filter((post: any) => {
-        // Filter by channel if selected
-        if (selectedChannel && selectedChannel !== "all" && post.kol_channels?.channel_type !== selectedChannel) {
+        // Filter by channels if selected
+        if (selectedChannels.length > 0 && !selectedChannels.includes(post.kol_channels?.channel_type)) {
           return false
         }
-        // Filter by campaign if selected (include posts with null campaign_id if they're from KOL channels in the campaign)
-        if (selectedCampaign) {
-          return post.campaign_id === selectedCampaign || post.campaign_id === null
+        // Filter by campaigns
+        if (selectedCampaigns.length > 0) {
+          return selectedCampaigns.includes(post.campaign_id) || post.campaign_id === null
         }
-        // Otherwise include all posts from campaigns
         return !post.campaign_id || campaignIds.includes(post.campaign_id)
       })
 
@@ -575,7 +630,7 @@ export default function KOLPostDetailDashboard({
     } finally {
       setLoading(false)
     }
-  }, [selectedAccount, selectedProject, selectedCampaign, selectedChannel, selectedPost, supabase])
+  }, [selectedAccount, selectedProject, selectedCampaigns, selectedChannels, selectedPosts, posts.length, supabase])
 
   useEffect(() => {
     fetchPostDetailData()
@@ -608,104 +663,236 @@ export default function KOLPostDetailDashboard({
       </div>
 
       {/* Filters */}
-      <Card>
+      <Card className="relative z-[100]">
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">Filters</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            <div>
+            {/* Account Dropdown */}
+            <div ref={accountDropdownRef} className="relative">
               <label className="text-sm font-medium mb-2 block">Account</label>
-              <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
+              <button
+                type="button"
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                onClick={() => setAccountDropdownOpen(!accountDropdownOpen)}
+              >
+                <span className="truncate">
+                  {selectedAccount ? accounts.find((a: any) => a.id === selectedAccount)?.name || "Select Account" : "Select Account"}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </button>
+              {accountDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-60 overflow-y-auto">
+                  {accounts.map((account: any) => (
+                    <div
+                      key={account.id}
+                      className={`px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer text-sm ${selectedAccount === account.id ? "bg-accent font-medium" : ""}`}
+                      onClick={() => {
+                        setSelectedAccount(account.id)
+                        setAccountDropdownOpen(false)
+                      }}
+                    >
                       {account.name}
-                    </SelectItem>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
-            <div>
+
+            {/* Project Dropdown */}
+            <div ref={projectDropdownRef} className="relative">
               <label className="text-sm font-medium mb-2 block">Project</label>
-              <Select
-                value={selectedProject}
-                onValueChange={setSelectedProject}
+              <button
+                type="button"
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => selectedAccount && setProjectDropdownOpen(!projectDropdownOpen)}
                 disabled={!selectedAccount}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
+                <span className="truncate">
+                  {selectedProject ? projects.find((p: any) => p.id === selectedProject)?.name || "Select Project" : "Select Project"}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </button>
+              {projectDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-60 overflow-y-auto">
+                  {projects.map((project: any) => (
+                    <div
+                      key={project.id}
+                      className={`px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer text-sm ${selectedProject === project.id ? "bg-accent font-medium" : ""}`}
+                      onClick={() => {
+                        setSelectedProject(project.id)
+                        setProjectDropdownOpen(false)
+                      }}
+                    >
                       {project.name}
-                    </SelectItem>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
-            <div>
+            {/* Campaign Multi-Select */}
+            <div ref={campaignDropdownRef} className="relative">
               <label className="text-sm font-medium mb-2 block">Campaign</label>
-              <Select
-                value={selectedCampaign}
-                onValueChange={setSelectedCampaign}
+              <button
+                type="button"
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => selectedProject && setCampaignDropdownOpen(!campaignDropdownOpen)}
                 disabled={!selectedProject}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Campaign" />
-                </SelectTrigger>
-                <SelectContent>
-                  {campaigns.map((campaign) => (
-                    <SelectItem key={campaign.id} value={campaign.id}>
-                      {campaign.name}
-                    </SelectItem>
+                <span className="truncate">
+                  {selectedCampaigns.length === 0
+                    ? "Select Campaign"
+                    : selectedCampaigns.length === campaigns.length
+                    ? `All Campaigns (${campaigns.length})`
+                    : `${selectedCampaigns.length}/${campaigns.length} campaigns`}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </button>
+              {campaignDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-60 overflow-y-auto">
+                  <div className="px-2 py-1.5 border-b mb-1">
+                    <button
+                      type="button"
+                      className="text-xs text-foreground font-medium hover:underline"
+                      onClick={() => {
+                        if (selectedCampaigns.length === campaigns.length) {
+                          setSelectedCampaigns([])
+                        } else {
+                          setSelectedCampaigns(campaigns.map((c: any) => c.id))
+                        }
+                      }}
+                    >
+                      {selectedCampaigns.length === campaigns.length ? "Deselect All" : "Select All"}
+                    </button>
+                  </div>
+                  {campaigns.map((campaign: any) => (
+                    <div
+                      key={campaign.id}
+                      className="flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer"
+                      onClick={() => {
+                        setSelectedCampaigns((prev) =>
+                          prev.includes(campaign.id) ? prev.filter((id) => id !== campaign.id) : [...prev, campaign.id]
+                        )
+                      }}
+                    >
+                      <Checkbox checked={selectedCampaigns.includes(campaign.id)} />
+                      <span className="text-sm truncate">{campaign.name}</span>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
-            <div>
+
+            {/* Channel Multi-Select */}
+            <div ref={channelDropdownRef} className="relative">
               <label className="text-sm font-medium mb-2 block">Channel</label>
-              <Select
-                value={selectedChannel || "all"}
-                onValueChange={(value) => setSelectedChannel(value === "all" ? "" : value)}
-                disabled={!selectedCampaign}
+              <button
+                type="button"
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => selectedCampaigns.length > 0 && setChannelDropdownOpen(!channelDropdownOpen)}
+                disabled={selectedCampaigns.length === 0}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="All Channels" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Channels</SelectItem>
+                <span className="truncate">
+                  {selectedChannels.length === 0
+                    ? "All Channels"
+                    : selectedChannels.length === CHANNEL_TYPES.length
+                    ? `All Channels (${CHANNEL_TYPES.length})`
+                    : `${selectedChannels.length}/${CHANNEL_TYPES.length} channels`}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </button>
+              {channelDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-60 overflow-y-auto">
+                  <div className="px-2 py-1.5 border-b mb-1">
+                    <button
+                      type="button"
+                      className="text-xs text-foreground font-medium hover:underline"
+                      onClick={() => {
+                        if (selectedChannels.length === CHANNEL_TYPES.length) {
+                          setSelectedChannels([])
+                        } else {
+                          setSelectedChannels([...CHANNEL_TYPES])
+                        }
+                      }}
+                    >
+                      {selectedChannels.length === CHANNEL_TYPES.length ? "Deselect All" : "Select All"}
+                    </button>
+                  </div>
                   {CHANNEL_TYPES.map((channel) => (
-                    <SelectItem key={channel} value={channel}>
-                      {channel.toUpperCase()}
-                    </SelectItem>
+                    <div
+                      key={channel}
+                      className="flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer"
+                      onClick={() => {
+                        setSelectedChannels((prev) =>
+                          prev.includes(channel) ? prev.filter((c) => c !== channel) : [...prev, channel]
+                        )
+                      }}
+                    >
+                      <Checkbox checked={selectedChannels.includes(channel)} />
+                      <span className="text-sm">{channel.toUpperCase()}</span>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
-            <div>
+
+            {/* Post Name Multi-Select */}
+            <div ref={postDropdownRef} className="relative">
               <label className="text-sm font-medium mb-2 block">Post Name</label>
-              <Select
-                value={selectedPost || "all"}
-                onValueChange={(value) => setSelectedPost(value === "all" ? "" : value)}
-                disabled={!selectedCampaign}
+              <button
+                type="button"
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => selectedCampaigns.length > 0 && setPostDropdownOpen(!postDropdownOpen)}
+                disabled={selectedCampaigns.length === 0}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="All Posts" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Posts</SelectItem>
-                  {posts.map((post) => (
-                    <SelectItem key={post.id} value={post.id}>
-                      {post.caption ? (post.caption.length > 50 ? post.caption.substring(0, 50) + "..." : post.caption) : post.external_post_id || `Post ${post.id.substring(0, 8)}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <span className="truncate">
+                  {selectedPosts.length === 0
+                    ? "All Posts"
+                    : selectedPosts.length === posts.length
+                    ? `All Posts (${posts.length})`
+                    : `${selectedPosts.length}/${posts.length} posts`}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </button>
+              {postDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-60 overflow-y-auto">
+                  <div className="px-2 py-1.5 border-b mb-1">
+                    <button
+                      type="button"
+                      className="text-xs text-foreground font-medium hover:underline"
+                      onClick={() => {
+                        if (selectedPosts.length === posts.length) {
+                          setSelectedPosts([])
+                        } else {
+                          setSelectedPosts(posts.map((p: any) => p.id))
+                        }
+                      }}
+                    >
+                      {selectedPosts.length === posts.length ? "Deselect All" : "Select All"}
+                    </button>
+                  </div>
+                  {posts.map((post: any) => {
+                    const kolName = post.kol_channels?.kols?.name || "Unknown KOL"
+                    const postId = post.external_post_id || post.id.substring(0, 8)
+                    const label = `${kolName} (${postId})`
+                    return (
+                      <div
+                        key={post.id}
+                        className="flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer"
+                        onClick={() => {
+                          setSelectedPosts((prev) =>
+                            prev.includes(post.id) ? prev.filter((id) => id !== post.id) : [...prev, post.id]
+                          )
+                        }}
+                      >
+                        <Checkbox checked={selectedPosts.includes(post.id)} />
+                        <span className="text-sm truncate">{label}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
