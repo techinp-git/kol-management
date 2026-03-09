@@ -479,6 +479,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../app/api/dashboard/comment-count/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/dashboard/comment-count">> = Specific
+  const handler = {} as typeof import("../../../app/api/dashboard/comment-count/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../app/api/import-post-comments/google-sheet/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/import-post-comments/google-sheet">> = Specific

@@ -3,13 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Users,
   Eye,
@@ -30,6 +24,7 @@ import {
   FolderKanban,
   Target,
 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { createClient } from "@/lib/supabase/client"
 // import html2canvas from "html2canvas" // Temporarily disabled - module not found
 
@@ -58,6 +53,8 @@ interface DashboardData {
     kolMentionCount: number
     other: number
     otherCount: number
+    unclassified: number
+    unclassifiedCount: number
     positive: number
     positiveCount: number
     neutral: number
@@ -80,7 +77,13 @@ export function KOLPerformanceDashboard() {
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [selectedAccount, setSelectedAccount] = useState<string>("")
   const [selectedProject, setSelectedProject] = useState<string>("")
-  const [selectedCampaign, setSelectedCampaign] = useState<string>("")
+  const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([])
+  const [accountDropdownOpen, setAccountDropdownOpen] = useState(false)
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
+  const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false)
+  const accountDropdownRef = useRef<HTMLDivElement>(null)
+  const projectDropdownRef = useRef<HTMLDivElement>(null)
+  const campaignDropdownRef = useRef<HTMLDivElement>(null)
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -131,7 +134,7 @@ export function KOLPerformanceDashboard() {
   useEffect(() => {
     if (!selectedProject) {
       setCampaigns([])
-      setSelectedCampaign("")
+      setSelectedCampaigns([])
       return
     }
 
@@ -151,13 +154,30 @@ export function KOLPerformanceDashboard() {
 
   // Fetch dashboard data when filters change
   useEffect(() => {
-    if (!selectedAccount) {
+    if (!selectedAccount || !selectedProject || selectedCampaigns.length === 0) {
       setDashboardData(null)
       return
     }
 
     fetchDashboardData()
-  }, [selectedAccount, selectedProject, selectedCampaign])
+  }, [selectedAccount, selectedProject, selectedCampaigns])
+
+  // Close dropdowns on click outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (accountDropdownRef.current && !accountDropdownRef.current.contains(e.target as Node)) {
+        setAccountDropdownOpen(false)
+      }
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) {
+        setProjectDropdownOpen(false)
+      }
+      if (campaignDropdownRef.current && !campaignDropdownRef.current.contains(e.target as Node)) {
+        setCampaignDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   async function fetchDashboardData() {
     setLoading(true)
@@ -167,7 +187,7 @@ export function KOLPerformanceDashboard() {
       console.log("[Dashboard] Starting fetch with filters:", {
         account: selectedAccount,
         project: selectedProject,
-        campaign: selectedCampaign,
+        campaigns: selectedCampaigns,
       })
 
       // Check if account is selected
@@ -229,13 +249,12 @@ export function KOLPerformanceDashboard() {
 
       let campaignIds = campaignsData.map((c) => c.id)
 
-      if (selectedCampaign && selectedCampaign !== "all") {
-        // If specific campaign is selected, only use that campaign
-        if (campaignIds.includes(selectedCampaign)) {
-          campaignIds = [selectedCampaign]
+      if (selectedCampaigns.length > 0) {
+        const filtered = campaignIds.filter((id) => selectedCampaigns.includes(id))
+        if (filtered.length > 0) {
+          campaignIds = filtered
         } else {
-          // Campaign not found in filtered list
-          console.warn("[Dashboard] Selected campaign not found in filtered list:", selectedCampaign)
+          console.warn("[Dashboard] Selected campaigns not found in filtered list:", selectedCampaigns)
           setError("ไม่พบ Campaign ที่เลือกในรายการ")
           setDashboardData(null)
           setLoading(false)
@@ -243,211 +262,82 @@ export function KOLPerformanceDashboard() {
         }
       }
 
-      // Get KOL channel IDs from campaign_kols that belong to these campaigns
-      // This way we can get posts even if they don't have campaign_id set
-      const { data: campaignKolsData, error: campaignKolsError } = await supabase
-        .from("campaign_kols")
-        .select(`
-          kol_channel_id,
-          campaign_id,
-          allocated_budget
-        `)
-        .in("campaign_id", campaignIds)
-
-      console.log("[Dashboard] Campaign KOLs query result:", {
-        data: campaignKolsData,
-        error: campaignKolsError,
-        errorCode: campaignKolsError?.code,
-        count: campaignKolsData?.length || 0,
-        campaignIds,
-      })
-
-      if (campaignKolsError) {
-        console.error("[Dashboard] Error fetching campaign KOLs:", campaignKolsError)
-        // Don't fail here - try to get posts directly by campaign_id
-        console.warn("[Dashboard] Will try to fetch posts directly by campaign_id")
-      }
-
-      const kolChannelIds = campaignKolsData
-        ?.map((ck) => ck.kol_channel_id)
-        .filter((id): id is string => id !== null) || []
-
-      console.log("[Dashboard] KOL Channel IDs from campaign_kols:", {
-        kolChannelIds,
-        count: kolChannelIds.length,
-        campaignKolsCount: campaignKolsData?.length || 0,
-      })
-
-      // If no KOL channels from campaign_kols, try to get posts directly by campaign_id
-      // This handles cases where posts are linked to campaigns but campaign_kols table is empty
-      let useDirectCampaignQuery = false
-      if (kolChannelIds.length === 0) {
-        console.warn("[Dashboard] No KOL channels found in campaign_kols, trying direct campaign_id query")
-        useDirectCampaignQuery = true
-      }
-
-      // Now fetch posts - get all posts from KOL channels in these campaigns
-      // This includes posts with or without campaign_id
-      let allPosts: any[] = []
-      let postsError: any = null
-
-      if (useDirectCampaignQuery) {
-        // Fallback: Get posts directly by campaign_id
-        console.log("[Dashboard] Fetching posts directly by campaign_id:", campaignIds)
-        const { data, error } = await supabase
-          .from("posts")
-          .select(`
+      // Fetch posts by campaign_id with pagination (consistent with sentiment dashboard)
+      const postSelectFields = `
+        id,
+        campaign_id,
+        kol_channel_id,
+        kol_budget,
+        boost_budget,
+        kol_channels(
+          id,
+          kol_id,
+          follower_count,
+          kols(
             id,
-            campaign_id,
-            kol_channel_id,
-            kol_budget,
-            boost_budget,
-            kol_channels(
-              id,
-              kol_id,
-              follower_count,
-              kols(
-                id,
-                name
-              )
-            ),
-            post_metrics(
-              id,
-              impressions,
-              reach,
-              views,
-              likes,
-              comments,
-              shares,
-              saves,
-              impressions_organic,
-              impressions_boost,
-              reach_organic,
-              reach_boost,
-              post_clicks,
-              link_clicks,
-              retweets,
-              ctr,
-              engagement_rate,
-              captured_at,
-              created_at
-            )
-          `)
+            name
+          )
+        ),
+        post_metrics(
+          id,
+          impressions,
+          reach,
+          views,
+          likes,
+          comments,
+          shares,
+          saves,
+          impressions_organic,
+          impressions_boost,
+          reach_organic,
+          reach_boost,
+          post_clicks,
+          link_clicks,
+          retweets,
+          ctr,
+          engagement_rate,
+          captured_at,
+          created_at
+        )
+      `
+      let posts: any[] = []
+      const postPageSize = 500
+      let postPage = 0
+      let hasMorePosts = true
+
+      while (hasMorePosts) {
+        const { data: pagePosts, error: postsError } = await supabase
+          .from("posts")
+          .select(postSelectFields)
           .in("campaign_id", campaignIds)
+          .order("id")
+          .range(postPage * postPageSize, (postPage + 1) * postPageSize - 1)
 
-        allPosts = data || []
-        postsError = error
+        if (postsError) {
+          console.error("[Dashboard] Error fetching posts:", postsError)
+          setError(`Error fetching posts: ${postsError.message || "Unknown error"}`)
+          setDashboardData(null)
+          setLoading(false)
+          return
+        }
 
-        console.log("[Dashboard] Posts query (direct by campaign_id) result:", {
-          allPostsCount: allPosts.length,
-          error: postsError,
-          errorCode: postsError?.code,
-        })
-      } else {
-        // Normal: Get posts by kol_channel_id
-        console.log("[Dashboard] Fetching posts by kol_channel_id:", kolChannelIds.slice(0, 3))
-        const { data, error } = await supabase
-          .from("posts")
-          .select(`
-            id,
-            campaign_id,
-            kol_channel_id,
-            kol_budget,
-            boost_budget,
-            kol_channels(
-              id,
-              kol_id,
-              follower_count,
-              kols(
-                id,
-                name
-              )
-            ),
-            post_metrics(
-              id,
-              impressions,
-              reach,
-              views,
-              likes,
-              comments,
-              shares,
-              saves,
-              impressions_organic,
-              impressions_boost,
-              reach_organic,
-              reach_boost,
-              post_clicks,
-              link_clicks,
-              retweets,
-              ctr,
-              engagement_rate,
-              captured_at,
-              created_at
-            )
-          `)
-          .in("kol_channel_id", kolChannelIds)
+        if (pagePosts) {
+          posts = [...posts, ...pagePosts]
+        }
 
-        allPosts = data || []
-        postsError = error
-
-        console.log("[Dashboard] Posts query (by kol_channel_id) result:", {
-          allPostsCount: allPosts.length,
-          error: postsError,
-          errorCode: postsError?.code,
-        })
+        hasMorePosts = (pagePosts?.length || 0) === postPageSize
+        postPage++
+        if (postPage >= 50) break
       }
 
-      console.log("[Dashboard] Posts query result:", {
-        allPostsCount: allPosts?.length || 0,
-        error: postsError,
-        errorCode: postsError?.code,
-        errorMessage: postsError?.message,
-        sample: allPosts?.[0],
-        queryMethod: useDirectCampaignQuery ? "direct_by_campaign_id" : "by_kol_channel_id",
-        kolChannelIdsUsed: kolChannelIds.slice(0, 3), // Show first 3 IDs
-      })
+      console.log("[Dashboard] Posts fetched:", { total: posts.length, pages: postPage })
 
-      if (postsError) {
-        console.error("[Dashboard] Error fetching posts:", postsError)
-        setError(`Error fetching posts: ${postsError.message || "Unknown error"}. Code: ${postsError.code || "N/A"}`)
-        setDashboardData(null)
-        setLoading(false)
-        return
-      }
-
-      if (!allPosts || allPosts.length === 0) {
-        console.warn("[Dashboard] No posts found", {
-          queryMethod: useDirectCampaignQuery ? "direct_by_campaign_id" : "by_kol_channel_id",
-          campaignIds,
-          kolChannelIds,
-        })
+      if (posts.length === 0) {
         setError("ไม่พบ Posts ใน Campaigns ที่เลือก กรุณาตรวจสอบว่ามี Posts ที่เชื่อมโยงกับ Campaign นี้หรือไม่")
         setDashboardData(null)
         setLoading(false)
         return
       }
-
-      // Filter posts based on campaign selection
-      // If specific campaign is selected, only include posts with that campaign_id or null
-      // If no specific campaign, include posts with any campaign_id in our list or null
-      let posts = allPosts || []
-      const beforeFilterCount = posts.length
-      
-      if (selectedCampaign) {
-        posts = posts.filter((p) => p.campaign_id === selectedCampaign || p.campaign_id === null)
-      } else {
-        // Include posts that belong to any of our campaigns OR have no campaign_id
-        posts = posts.filter((p) => p.campaign_id === null || campaignIds.includes(p.campaign_id))
-      }
-
-      console.log("[Dashboard] Posts after filter:", {
-        beforeFilter: beforeFilterCount,
-        afterFilter: posts.length,
-        withCampaignId: posts.filter((p) => p.campaign_id).length,
-        withoutCampaignId: posts.filter((p) => !p.campaign_id).length,
-        samplePost: posts[0],
-        samplePostMetrics: posts[0]?.post_metrics?.[0],
-      })
 
       // Calculate total cost from posts table: kol_budget + boost_budget
       let totalCost = 0
@@ -586,6 +476,7 @@ export function KOLPerformanceDashboard() {
             .from("comments")
             .select("id, text, post_intention, post_id")
             .in("post_id", postIds)
+            .order("id")
             .range(currentPage * pageSize, (currentPage + 1) * pageSize - 1)
           
           if (pageError) {
@@ -626,6 +517,7 @@ export function KOLPerformanceDashboard() {
             .from("master_post_intention")
             .select("post_intention, group_intention, sentiment")
             .eq("is_active", true)
+            .order("post_intention")
 
           if (commentsOnlyError) {
             console.warn("[Dashboard] Error fetching comments:", commentsOnlyError)
@@ -634,11 +526,11 @@ export function KOLPerformanceDashboard() {
             console.warn("[Dashboard] Error fetching master_post_intention:", masterError)
           }
 
-          // Create lookup map from master_post_intention (simulates JOIN)
+          // Create lookup map from master_post_intention (keep first occurrence for duplicates)
           const intentionMap = new Map<string, { group_intention: string; sentiment: string | null }>()
           if (masterIntentions) {
             masterIntentions.forEach((item) => {
-              if (item.post_intention) {
+              if (item.post_intention && !intentionMap.has(item.post_intention)) {
                 intentionMap.set(item.post_intention, {
                   group_intention: item.group_intention || "Other",
                   sentiment: item.sentiment || null,
@@ -647,174 +539,77 @@ export function KOLPerformanceDashboard() {
             })
           }
 
-          // Join comments with master_post_intention data (simulates: comments c INNER JOIN master_post_intention mp ON c.post_intention = mp.post_intention)
-        const commentsWithPostIntention = (commentsOnly || []).filter((comment) => comment.post_intention)
-        const commentsMatchingIntention = commentsWithPostIntention.filter((comment) => intentionMap.has(comment.post_intention!))
-        const commentsNotMatchingIntention = commentsWithPostIntention.length - commentsMatchingIntention.length
-        
-        commentsWithIntention = commentsMatchingIntention
-            .map((comment) => {
-              const intentionData = intentionMap.get(comment.post_intention!)!
+          // LEFT JOIN: comments c LEFT JOIN master_post_intention m ON c.post_intention = m.post_intention
+        commentsWithIntention = (commentsOnly || []).map((comment) => {
+          const intentionData = comment.post_intention ? intentionMap.get(comment.post_intention) : undefined
+          return {
+            comment_id: comment.id,
+            post_id: comment.post_id,
+            group_intention: intentionData?.group_intention || null,
+            sentiment: intentionData?.sentiment || null,
+          }
+        })
 
-              return {
-                comment_id: comment.id,
-                post_id: comment.post_id,
-                group_intention: intentionData.group_intention,
-                sentiment: intentionData.sentiment,
-              }
-            })
-
-          console.log("[Dashboard] Comments with intention (fallback JOIN) result:", {
-          totalCommentsFetched,
-          commentsWithPostIntention: commentsWithPostIntention.length,
-          commentsMatchingIntention: commentsWithIntention.length,
-          commentsNotMatchingIntention,
-          commentsWithoutPostIntention: totalCommentsFetched - commentsWithPostIntention.length,
-            withGroupIntention: commentsWithIntention.filter((c) => c.group_intention !== "Other").length,
-            withSentiment: commentsWithIntention.filter((c) => c.sentiment).length,
+        const matchedCount = commentsWithIntention.filter((c) => c.group_intention !== null).length
+        console.log("[Dashboard] Comments LEFT JOIN result:", {
+          totalComments: commentsWithIntention.length,
+          matched: matchedCount,
+          unmatched: commentsWithIntention.length - matchedCount,
           masterIntentionCount: intentionMap.size,
-          })
+        })
       } else {
         console.log("[Dashboard] No post IDs to fetch comments")
       }
 
-      // Count total comments from comments table (use this as the actual count)
-      let totalCommentsFromTable = 0
-      if (postIds.length > 0) {
-        // Count all comments (including those without post_intention)
-        // Use pagination to get accurate count for large datasets
-        const { count: totalCommentsCount, error: countError } = await supabase
-          .from("comments")
-          .select("*", { count: "exact", head: true })
-          .in("post_id", postIds)
-        
-        if (!countError && totalCommentsCount !== null) {
-          totalCommentsFromTable = totalCommentsCount
-        } else {
-          // Fallback: count manually with pagination if count query fails
-          let manualCount = 0
-          const countPageSize = 1000
-          let countPage = 0
-          let hasMoreCount = true
-          
-          while (hasMoreCount) {
-            const { data: countPageData, error: countPageError } = await supabase
-              .from("comments")
-              .select("id")
-              .in("post_id", postIds)
-              .range(countPage * countPageSize, (countPage + 1) * countPageSize - 1)
-            
-            if (countPageError) {
-              console.warn("[Dashboard] Error counting comments:", countPageError)
-              break
-            }
-            
-            if (countPageData) {
-              manualCount += countPageData.length
-            }
-            
-            hasMoreCount = countPageData && countPageData.length === countPageSize
-            countPage++
-            
-            if (countPage >= 100) {
-              break
-            }
-          }
-          
-          totalCommentsFromTable = manualCount
-        }
-      }
+      // LEFT JOIN: total = all comments, no separate count query needed
+      const actualTotalComments = commentsWithIntention.length
 
-      // Use totalCommentsFromTable as the actual comment count (more accurate than post_metrics)
-      const actualTotalComments = totalCommentsFromTable > 0 ? totalCommentsFromTable : totalComments
-
-      console.log("[Dashboard] Comments comparison:", {
-        totalCommentsFromMetrics: totalComments,
-        totalCommentsFromTable,
-        actualTotalComments,
-        commentsWithIntention: commentsWithIntention.length,
-        difference: totalCommentsFromTable - commentsWithIntention.length,
-        percentageWithIntention: totalCommentsFromTable > 0 
-          ? ((commentsWithIntention.length / totalCommentsFromTable) * 100).toFixed(2) + '%'
-          : '0%',
-      })
-
-      // Calculate sentiment and group mention from joined data
+      // Group by group_intention (Brand, KOL, Other, null=ไม่ระบุ)
       let brandMention = 0
       let kolMention = 0
       let other = 0
-      let positive = 0
-      let negative = 0
-      let neutral = 0
+      let unclassifiedCount = 0
 
-      // แยก sentiment สำหรับ Brand เท่านั้น
       let brandPositive = 0
       let brandNegative = 0
       let brandNeutral = 0
 
       commentsWithIntention.forEach((comment) => {
-        const groupIntention = comment.group_intention || "Other"
+        const groupIntention = comment.group_intention
         const sentiment = comment.sentiment
 
-        // Count by group_intention
         if (groupIntention === "Brand") {
           brandMention++
-          // นับ sentiment เฉพาะ Brand
-          if (sentiment === "Positive") {
-            brandPositive++
-          } else if (sentiment === "Negative") {
-            brandNegative++
-          } else {
-            brandNeutral++
-          }
+          if (sentiment === "Positive") brandPositive++
+          else if (sentiment === "Negative") brandNegative++
+          else brandNeutral++
         } else if (groupIntention === "KOL") {
           kolMention++
-        } else {
+        } else if (groupIntention) {
           other++
-        }
-
-        // Count by sentiment (สำหรับทั้งหมด - ใช้สำหรับการแสดงผลอื่นๆ ถ้ามี)
-        if (sentiment === "Positive") {
-          positive++
-        } else if (sentiment === "Negative") {
-          negative++
         } else {
-          neutral++
+          unclassifiedCount++
         }
       })
 
-      // คำนวณ percentage สำหรับ Brand sentiment
       const totalBrandSentiment = brandPositive + brandNegative + brandNeutral
       const brandPositivePercent = totalBrandSentiment > 0 ? (brandPositive / totalBrandSentiment) * 100 : 0
       const brandNeutralPercent = totalBrandSentiment > 0 ? (brandNeutral / totalBrandSentiment) * 100 : 0
       const brandNegativePercent = totalBrandSentiment > 0 ? (brandNegative / totalBrandSentiment) * 100 : 0
 
-      // คำนวณ percentage สำหรับ sentiment ทั้งหมด (ถ้ายังใช้อยู่)
-      const totalSentiment = positive + negative + neutral
-      const positivePercent = totalSentiment > 0 ? (positive / totalSentiment) * 100 : 0
-      const neutralPercent = totalSentiment > 0 ? (neutral / totalSentiment) * 100 : 0
-      const negativePercent = totalSentiment > 0 ? (negative / totalSentiment) * 100 : 0
-
-      const totalCommentsForMention = commentsWithIntention.length
+      const totalCommentsForMention = actualTotalComments
       const brandMentionPercent = totalCommentsForMention > 0 ? (brandMention / totalCommentsForMention) * 100 : 0
       const kolMentionPercent = totalCommentsForMention > 0 ? (kolMention / totalCommentsForMention) * 100 : 0
       const otherPercent = totalCommentsForMention > 0 ? (other / totalCommentsForMention) * 100 : 0
+      const unclassifiedPercent = totalCommentsForMention > 0 ? (unclassifiedCount / totalCommentsForMention) * 100 : 0
 
-      console.log("[Dashboard] Sentiment calculation:", {
-        totalCommentsForMention,
-        brandMention,
-        kolMention,
+      console.log("[Dashboard] LEFT JOIN group_intention counts:", {
+        total: actualTotalComments,
+        brand: brandMention,
+        kol: kolMention,
         other,
-        // Brand sentiment
-        brandPositive,
-        brandNeutral,
-        brandNegative,
-        totalBrandSentiment,
-        // All sentiment (for reference)
-        positive,
-        negative,
-        neutral,
-        totalSentiment,
+        unclassified: unclassifiedCount,
+        brandSentiment: { positive: brandPositive, neutral: brandNeutral, negative: brandNegative },
       })
 
       // Calculate cost efficiency
@@ -863,7 +658,8 @@ export function KOLPerformanceDashboard() {
           kolMentionCount: kolMention,
           other: otherPercent,
           otherCount: other,
-          // ใช้ Brand sentiment แทน sentiment ทั้งหมด
+          unclassified: unclassifiedPercent,
+          unclassifiedCount,
           positive: brandPositivePercent,
           positiveCount: brandPositive,
           neutral: brandNeutralPercent,
@@ -1110,7 +906,7 @@ export function KOLPerformanceDashboard() {
       </div>
 
       {/* Filters */}
-      <Card>
+      <Card className="relative z-[100]">
         <CardHeader>
           <CardTitle>Filters</CardTitle>
         </CardHeader>
@@ -1118,71 +914,138 @@ export function KOLPerformanceDashboard() {
           <div className="grid gap-4 md:grid-cols-3">
             <div>
               <label className="text-sm font-medium mb-2 block">Account</label>
-              <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      {account.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="relative" ref={accountDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setAccountDropdownOpen((prev) => !prev)}
+                  className="flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <span className="truncate text-left">
+                    {selectedAccount ? accounts.find((a) => a.id === selectedAccount)?.name || "Unknown" : "Select Account"}
+                  </span>
+                  <svg className="h-4 w-4 opacity-50 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                {accountDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-64 overflow-auto">
+                    {accounts.map((account) => (
+                      <div
+                        key={account.id}
+                        className={`px-3 py-2 cursor-pointer hover:bg-accent transition-colors text-sm ${selectedAccount === account.id ? "bg-accent font-medium" : ""}`}
+                        onClick={() => { setSelectedAccount(account.id); setAccountDropdownOpen(false) }}
+                      >
+                        {account.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div>
               <label className="text-sm font-medium mb-2 block">Project</label>
-              <Select
-                value={selectedProject}
-                onValueChange={setSelectedProject}
-                disabled={!selectedAccount}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="relative" ref={projectDropdownRef}>
+                <button
+                  type="button"
+                  disabled={!selectedAccount}
+                  onClick={() => setProjectDropdownOpen((prev) => !prev)}
+                  className="flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span className="truncate text-left">
+                    {selectedProject ? projects.find((p) => p.id === selectedProject)?.name || "Unknown" : "Select Project"}
+                  </span>
+                  <svg className="h-4 w-4 opacity-50 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                {projectDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-64 overflow-auto">
+                    {projects.map((project) => (
+                      <div
+                        key={project.id}
+                        className={`px-3 py-2 cursor-pointer hover:bg-accent transition-colors text-sm ${selectedProject === project.id ? "bg-accent font-medium" : ""}`}
+                        onClick={() => { setSelectedProject(project.id); setProjectDropdownOpen(false) }}
+                      >
+                        {project.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div>
               <label className="text-sm font-medium mb-2 block">Campaign</label>
-              <Select
-                value={selectedCampaign || "all"}
-                onValueChange={(value) => setSelectedCampaign(value === "all" ? "" : value)}
-                disabled={!selectedProject}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Campaign" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Campaigns</SelectItem>
-                  {campaigns.map((campaign) => (
-                    <SelectItem key={campaign.id} value={campaign.id}>
-                      {campaign.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="relative" ref={campaignDropdownRef}>
+                <button
+                  type="button"
+                  disabled={!selectedProject}
+                  onClick={() => setCampaignDropdownOpen((prev) => !prev)}
+                  className="flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span className="truncate text-left">
+                    {selectedCampaigns.length === 0
+                      ? `All Campaigns (${campaigns.length})`
+                      : selectedCampaigns.length === 1
+                        ? campaigns.find((c) => c.id === selectedCampaigns[0])?.name || "1 selected"
+                        : `${selectedCampaigns.length}/${campaigns.length} campaigns selected`}
+                  </span>
+                  <svg className="h-4 w-4 opacity-50 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                {campaignDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-64 overflow-auto">
+                    <div className="p-2 border-b">
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => {
+                          if (selectedCampaigns.length === campaigns.length) {
+                            setSelectedCampaigns([])
+                          } else {
+                            setSelectedCampaigns(campaigns.map((c) => c.id))
+                          }
+                        }}
+                      >
+                        {selectedCampaigns.length === campaigns.length ? "Deselect All" : "Select All"}
+                      </button>
+                    </div>
+                    {campaigns.map((campaign) => {
+                      const isChecked = selectedCampaigns.includes(campaign.id)
+                      return (
+                        <label
+                          key={campaign.id}
+                          className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent transition-colors text-sm"
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(checked) => {
+                              setSelectedCampaigns((prev) =>
+                                checked
+                                  ? [...prev, campaign.id]
+                                  : prev.filter((id) => id !== campaign.id)
+                              )
+                            }}
+                          />
+                          <span className="truncate">{campaign.name}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Info message when no account selected */}
-      {!selectedAccount && !loading && (
+      {/* Info message when filters are incomplete */}
+      {!loading && !dashboardData && !error && (
         <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
           <CardHeader>
-            <CardTitle className="text-blue-900 dark:text-blue-100">กรุณาเลือก Account</CardTitle>
+            <CardTitle className="text-blue-900 dark:text-blue-100">กรุณาเลือก Filter</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-blue-800 dark:text-blue-200">
-              กรุณาเลือก Account เพื่อดูข้อมูล Sentiment by KOL
+              {!selectedAccount
+                ? "กรุณาเลือก Account เพื่อดูข้อมูล Dashboard"
+                : !selectedProject
+                  ? "กรุณาเลือก Project"
+                  : "กรุณาเลือกอย่างน้อย 1 Campaign เพื่อแสดงข้อมูล"}
             </p>
           </CardContent>
         </Card>
@@ -1235,19 +1098,21 @@ export function KOLPerformanceDashboard() {
                     </span>
                   </div>
                 )}
-                {selectedCampaign ? (
+                {selectedProject && (
                   <div className="flex items-center gap-2 px-4 py-2.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm rounded-lg border border-white/20 shadow-md hover:shadow-lg transition-shadow">
                     <Target className="h-4 w-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
                     <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Campaign</span>
-                    <span className="text-sm font-bold text-purple-700 dark:text-purple-300">
-                      {campaigns.find(c => c.id === selectedCampaign)?.name || "Unknown"}
-                    </span>
-                  </div>
-                ) : selectedProject && (
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-white/70 dark:bg-gray-900/70 backdrop-blur-sm rounded-lg border border-white/10 shadow-sm">
-                    <Target className="h-4 w-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
-                    <span className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">Campaign</span>
-                    <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">All Campaigns</span>
+                    {selectedCampaigns.length === 0 ? (
+                      <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">All Campaigns</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {selectedCampaigns.map((cId) => (
+                          <Badge key={cId} variant="secondary" className="text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/50">
+                            {campaigns.find((c) => c.id === cId)?.name || cId}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1376,7 +1241,8 @@ export function KOLPerformanceDashboard() {
                     รวม: {(
                       dashboardData.sentiment.brandMentionCount +
                       dashboardData.sentiment.kolMentionCount +
-                      dashboardData.sentiment.otherCount
+                      dashboardData.sentiment.otherCount +
+                      dashboardData.sentiment.unclassifiedCount
                     ).toLocaleString()}
                   </span>
                 </CardTitle>
@@ -1425,6 +1291,22 @@ export function KOLPerformanceDashboard() {
                       />
                     </div>
                   </div>
+                  {dashboardData.sentiment.unclassifiedCount > 0 && (
+                    <div>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-sm font-medium text-muted-foreground">ไม่ระบุ (Unclassified)</span>
+                        <span className="text-sm font-medium text-muted-foreground">
+                          {dashboardData.sentiment.unclassifiedCount.toLocaleString()} ({dashboardData.sentiment.unclassified.toFixed(2)}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-gray-300 h-2 rounded-full"
+                          style={{ width: `${dashboardData.sentiment.unclassified}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
