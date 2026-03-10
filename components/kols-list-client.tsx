@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useEffect } from "react"
+import { useState, useTransition, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -21,6 +21,7 @@ import {
   Video,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
 } from "lucide-react"
 import Link from "next/link"
 import { Input } from "@/components/ui/input"
@@ -34,6 +35,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type KOL = {
@@ -135,8 +137,14 @@ const getStatusText = (status: string) => {
   }
 }
 
+type CampaignOption = { id: string; name: string | null }
+type KolStatsMap = Record<string, { postCount: number; totalPaid: number }>
+
 interface KOLsListClientProps {
   initialKOLs: KOL[]
+  initialCampaigns?: CampaignOption[]
+  campaignKolIds?: Record<string, string[]>
+  kolStats?: KolStatsMap
   currentPage: number
   totalPages: number
   totalCount: number
@@ -145,7 +153,7 @@ interface KOLsListClientProps {
   useClientSideSearch?: boolean
 }
 
-export function KOLsListClient({ initialKOLs, currentPage, totalPages, totalCount, itemsPerPage, useApiPagination = false, useClientSideSearch = false }: KOLsListClientProps) {
+export function KOLsListClient({ initialKOLs, initialCampaigns = [], campaignKolIds = {}, kolStats = {}, currentPage, totalPages, totalCount, itemsPerPage, useApiPagination = false, useClientSideSearch = false }: KOLsListClientProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -155,6 +163,9 @@ export function KOLsListClient({ initialKOLs, currentPage, totalPages, totalCoun
   const [kols, setKOLs] = useState<KOL[]>(initialKOLs)
   const [allKols, setAllKols] = useState<KOL[]>(initialKOLs) // Store all KOLs for client-side search
   const [searchQuery, setSearchQuery] = useState("")
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>(() => initialCampaigns.map((c) => c.id))
+  const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false)
+  const campaignDropdownRef = useRef<HTMLDivElement>(null)
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedKOL, setSelectedKOL] = useState<string | null>(null)
@@ -239,18 +250,26 @@ export function KOLsListClient({ initialKOLs, currentPage, totalPages, totalCoun
     }
   }, [useApiPagination])
 
-  // Client-side search and pagination
+  // Client-side search and pagination (includes campaign filter)
   const performClientSearch = (query: string, page: number = 1) => {
     const filtered = allKols.filter((kol) => {
       const searchTerm = query.toLowerCase()
-      return (
+      const matchesSearch =
         kol.name.toLowerCase().includes(searchTerm) ||
         kol.handle?.toLowerCase().includes(searchTerm) ||
         kol.category?.join(", ").toLowerCase().includes(searchTerm) ||
         kol.country?.toLowerCase().includes(searchTerm) ||
         kol.status.toLowerCase().includes(searchTerm) ||
         kol.kol_tier?.toLowerCase().includes(searchTerm)
-      )
+      if (!matchesSearch) return false
+      // เมื่อไม่เลือก campaign หรือเลือกครบทุก campaign = แสดงทั้งหมด
+      if (selectedCampaignIds.length > 0 && selectedCampaignIds.length < initialCampaigns.length) {
+        const belongsToAny = selectedCampaignIds.some(
+          (cid) => campaignKolIds[cid]?.includes(kol.id)
+        )
+        if (!belongsToAny) return false
+      }
+      return true
     })
 
     const totalCount = filtered.length
@@ -285,7 +304,7 @@ export function KOLsListClient({ initialKOLs, currentPage, totalPages, totalCoun
     return () => clearTimeout(timeoutId)
   }, [searchQuery, useApiPagination])
 
-  // Client-side search effect
+  // Client-side search: debounce only for search query
   useEffect(() => {
     if (!useClientSideSearch) return
 
@@ -294,14 +313,31 @@ export function KOLsListClient({ initialKOLs, currentPage, totalPages, totalCoun
     }, 300)
 
     return () => clearTimeout(timeoutId)
-  }, [searchQuery, useClientSideSearch, allKols])
+  }, [searchQuery, useClientSideSearch])
+
+  // Re-run filter immediately when campaign selection (or data) changes
+  useEffect(() => {
+    if (!useClientSideSearch) return
+    performClientSearch(searchQuery, 1)
+  }, [selectedCampaignIds, allKols, campaignKolIds, useClientSideSearch])
 
   // Initialize client-side pagination
   useEffect(() => {
     if (useClientSideSearch) {
-      performClientSearch("", currentPage)
+      performClientSearch(searchQuery, currentPage)
     }
   }, [useClientSideSearch, initialKOLs, currentPage])
+
+  // Close campaign dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (campaignDropdownRef.current && !campaignDropdownRef.current.contains(e.target as Node)) {
+        setCampaignDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   // Keyboard navigation for pagination
   useEffect(() => {
@@ -467,8 +503,8 @@ export function KOLsListClient({ initialKOLs, currentPage, totalPages, totalCoun
     <>
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="ค้นหา KOL..."
@@ -476,6 +512,55 @@ export function KOLsListClient({ initialKOLs, currentPage, totalPages, totalCoun
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
+            </div>
+            <div ref={campaignDropdownRef} className="relative min-w-[200px] max-w-[280px]">
+              <button
+                type="button"
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                onClick={() => setCampaignDropdownOpen(!campaignDropdownOpen)}
+              >
+                <span className="truncate">
+                  {selectedCampaignIds.length === 0
+                    ? "ทุก Campaign"
+                    : selectedCampaignIds.length === initialCampaigns.length
+                      ? `ทุก Campaign (${initialCampaigns.length})`
+                      : `${selectedCampaignIds.length}/${initialCampaigns.length} campaigns`}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </button>
+              {campaignDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-60 overflow-y-auto">
+                  <div className="px-2 py-1.5 border-b mb-1">
+                    <button
+                      type="button"
+                      className="text-xs text-foreground font-medium hover:underline"
+                      onClick={() => {
+                        if (selectedCampaignIds.length === initialCampaigns.length) {
+                          setSelectedCampaignIds([])
+                        } else {
+                          setSelectedCampaignIds(initialCampaigns.map((c) => c.id))
+                        }
+                      }}
+                    >
+                      {selectedCampaignIds.length === initialCampaigns.length ? "ยกเลิกทั้งหมด" : "เลือกทั้งหมด"}
+                    </button>
+                  </div>
+                  {initialCampaigns.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer"
+                      onClick={() => {
+                        setSelectedCampaignIds((prev) =>
+                          prev.includes(c.id) ? prev.filter((id) => id !== c.id) : [...prev, c.id]
+                        )
+                      }}
+                    >
+                      <Checkbox checked={selectedCampaignIds.includes(c.id)} />
+                      <span className="text-sm truncate">{c.name || "(ไม่มีชื่อ)"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="flex gap-1 border rounded-lg p-1">
               <Button
@@ -512,6 +597,7 @@ export function KOLsListClient({ initialKOLs, currentPage, totalPages, totalCoun
             <div className="grid gap-6 md:grid-cols-2">
               {filteredKOLs.map((kol) => {
                 const totalFollowers = getTotalFollowers(kol.kol_channels || [])
+                const stats = kolStats[kol.id] ?? { postCount: 0, totalPaid: 0 }
                 return (
                   <Card key={kol.id} className="overflow-hidden border-2 hover:border-[#FFFF00]/50 transition-colors">
                     <CardContent className="p-0">
@@ -540,6 +626,17 @@ export function KOLsListClient({ initialKOLs, currentPage, totalPages, totalCoun
                             <Badge className={`${getStatusColor(kol.status)} border shrink-0 ml-2`}>
                               {getStatusText(kol.status)}
                             </Badge>
+                          </div>
+
+                          <div className="flex gap-4 text-sm border-t pt-4">
+                            <div>
+                              <span className="text-muted-foreground">จำนวนโพสต์: </span>
+                              <span className="font-semibold">{stats.postCount}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">เงินที่จ่ายทั้งหมด: </span>
+                              <span className="font-semibold">{stats.totalPaid.toLocaleString("th-TH")} THB</span>
+                            </div>
                           </div>
 
                           {kol.kol_channels && kol.kol_channels.length > 0 && (
@@ -625,19 +722,22 @@ export function KOLsListClient({ initialKOLs, currentPage, totalPages, totalCoun
                     <TableHead className="font-bold">สถานะ</TableHead>
                     <TableHead className="font-bold">ช่องทางโซเชียล</TableHead>
                     <TableHead className="font-bold text-right">ผู้ติดตามรวม</TableHead>
+                    <TableHead className="font-bold text-right">จำนวนโพสต์</TableHead>
+                    <TableHead className="font-bold text-right">เงินที่จ่ายทั้งหมด</TableHead>
                     <TableHead className="font-bold text-center">จัดการ</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredKOLs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-12">
+                      <TableCell colSpan={8} className="text-center py-12">
                         <p className="text-muted-foreground">ไม่พบ KOL</p>
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredKOLs.map((kol) => {
                       const totalFollowers = getTotalFollowers(kol.kol_channels || [])
+                      const stats = kolStats[kol.id] ?? { postCount: 0, totalPaid: 0 }
                       return (
                         <TableRow key={kol.id} className="hover:bg-muted/30">
                           <TableCell>
@@ -698,6 +798,12 @@ export function KOLsListClient({ initialKOLs, currentPage, totalPages, totalCoun
                           </TableCell>
                           <TableCell className="text-right">
                             <p className="font-bold">{formatFollowerCount(totalFollowers)}</p>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className="font-medium">{stats.postCount}</span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className="font-medium">{stats.totalPaid.toLocaleString("th-TH")} THB</span>
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-2 justify-center">

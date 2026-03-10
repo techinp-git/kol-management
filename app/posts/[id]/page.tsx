@@ -72,8 +72,14 @@ async function getPost(id: string) {
     console.log("[v0] Fetched comments for post", id, ":", comments?.length || 0, "comments")
     console.log("[v0] Comments data:", comments)
 
+    // ค่าตัว KOL: ใช้จาก posts.kol_budget ก่อน ถ้าไม่มีค่อยใช้ campaign_kols.allocated_budget
     let kolBudget = 0
-    if (post.campaign_id && post.kol_channels?.kols?.id) {
+    const postKolBudget = post.kol_budget != null && post.kol_budget !== ""
+      ? parseFloat(post.kol_budget.toString())
+      : NaN
+    if (!isNaN(postKolBudget)) {
+      kolBudget = postKolBudget
+    } else if (post.campaign_id && post.kol_channels?.kols?.id) {
       const { data: campaignKols, error: campaignKolsError } = await supabase
         .from("campaign_kols")
         .select("kol_id, allocated_budget")

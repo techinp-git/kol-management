@@ -97,9 +97,26 @@ export default async function KOLDetailPage({ params }: { params: Promise<{ id: 
         status,
         kol_channel_id,
         campaign_id,
+        kol_budget,
+        boost_budget,
         campaigns (
           id,
           name
+        ),
+        post_metrics (
+          impressions_organic,
+          impressions_boost,
+          reach_organic,
+          reach_boost,
+          likes,
+          comments,
+          shares,
+          saves,
+          post_clicks,
+          link_clicks,
+          retweets,
+          views,
+          captured_at
         )
       `)
       .in("kol_channel_id", channelIds)
@@ -108,9 +125,78 @@ export default async function KOLDetailPage({ params }: { params: Promise<{ id: 
 
     if (!postsError && posts) {
       totalPostsCount = posts.length
-      
+      const postIds = (posts as any[]).map((p: any) => p.id)
+
+      // Sentiment ต่อโพสต์: จาก comments + master_post_intention
+      let sentimentByPostId: Record<string, { positive: number; neutral: number; negative: number; unclassified: number }> = {}
+      if (postIds.length > 0) {
+        const [commentsRes, masterRes] = await Promise.all([
+          supabase.from("comments").select("post_id, post_intention").in("post_id", postIds),
+          supabase
+            .from("master_post_intention")
+            .select("post_intention, sentiment")
+            .eq("is_active", true),
+        ])
+        const commentsList = commentsRes.data || []
+        const intentionToSentiment = new Map<string, string>()
+        ;(masterRes.data || []).forEach((row: any) => {
+          if (row.post_intention && !intentionToSentiment.has(row.post_intention)) {
+            intentionToSentiment.set(row.post_intention, row.sentiment || "Neutral")
+          }
+        })
+        commentsList.forEach((c: any) => {
+          const sentiment = c.post_intention ? (intentionToSentiment.get(c.post_intention) || "Neutral") : null
+          if (!sentimentByPostId[c.post_id]) {
+            sentimentByPostId[c.post_id] = { positive: 0, neutral: 0, negative: 0, unclassified: 0 }
+          }
+          const bucket = sentiment === "Positive" ? "positive" : sentiment === "Negative" ? "negative" : sentiment === "Neutral" ? "neutral" : "unclassified"
+          sentimentByPostId[c.post_id][bucket]++
+        })
+      }
+
+      // Take latest metric per post and add computed fields
+      const postsWithStats = (posts as any[]).map((post: any) => {
+        const metrics = post.post_metrics || []
+        const latest = [...metrics].sort(
+          (a: any, b: any) => new Date(b.captured_at || 0).getTime() - new Date(a.captured_at || 0).getTime()
+        )[0]
+        const imp = (latest?.impressions_organic || 0) + (latest?.impressions_boost || 0)
+        const reach = (latest?.reach_organic || 0) + (latest?.reach_boost || 0)
+        const engage =
+          (latest?.likes || 0) +
+          (latest?.comments || 0) +
+          (latest?.shares || 0) +
+          (latest?.saves || 0) +
+          (latest?.post_clicks || 0) +
+          (latest?.link_clicks || 0) +
+          (latest?.retweets || 0)
+        const kolBudget = parseFloat(post.kol_budget?.toString() || "0") || 0
+        const boostBudget = parseFloat(post.boost_budget?.toString() || "0") || 0
+        const totalCost = kolBudget + boostBudget
+        const sent = sentimentByPostId[post.id]
+        const sentimentLabel =
+          sent && (sent.positive + sent.neutral + sent.negative + sent.unclassified) > 0
+            ? [
+                sent.positive ? `⊕${sent.positive}` : null,
+                sent.negative ? `⊖${sent.negative}` : null,
+                sent.neutral ? `○${sent.neutral}` : null,
+                sent.unclassified ? `?${sent.unclassified}` : null,
+              ]
+                .filter(Boolean)
+                .join(" ")
+            : null
+        return {
+          ...post,
+          _impression: imp,
+          _reach: reach,
+          _engage: engage,
+          _cost: totalCost,
+          _sentiment: sentimentLabel,
+          _sentimentDetail: sent || undefined,
+        }
+      })
       // Group posts by channel_id
-      postsByChannel = posts.reduce((acc: Record<string, any[]>, post: any) => {
+      postsByChannel = postsWithStats.reduce((acc: Record<string, any[]>, post: any) => {
         const channelId = post.kol_channel_id
         if (!acc[channelId]) {
           acc[channelId] = []

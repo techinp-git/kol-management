@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 
 type Post = {
   id: string
@@ -90,10 +91,18 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
   // ใช้ default = [] กันทุก case
   const allPosts = initialPosts ?? []
   const [posts, setPosts] = useState<Post[]>(allPosts)
+  const [allFilteredPosts, setAllFilteredPosts] = useState<Post[]>(allPosts)
 
   const [searchQuery, setSearchQuery] = useState("")
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>([])
+  const [selectedKolNames, setSelectedKolNames] = useState<string[]>([])
+  const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false)
+  const [kolDropdownOpen, setKolDropdownOpen] = useState(false)
+  const campaignDropdownRef = useRef<HTMLDivElement | null>(null)
+  const kolDropdownRef = useRef<HTMLDivElement | null>(null)
+  const filterInitializedRef = useRef(false)
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -132,6 +141,16 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
   // Client-side search and pagination function
   const performClientSearch = (query: string, dateFromFilter: string, dateToFilter: string, page: number = 1) => {
     let filtered = allPosts
+
+    if (!isAllCampaigns) {
+      filtered = filtered.filter((p) => p.campaign_id && selectedCampaignIds.includes(p.campaign_id))
+    }
+    if (!isAllKols) {
+      filtered = filtered.filter((p) => {
+        const n = (p.kol_name ?? "").trim() || "Unknown"
+        return selectedKolNames.includes(n)
+      })
+    }
 
     // Apply search filter
     if (query.trim()) {
@@ -180,7 +199,8 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
     const endIndex = startIndex + pageSize
     const pageData = filtered.slice(startIndex, endIndex)
 
-    // Update client pagination state
+    // Update client pagination state และรายการที่ filter ทั้งหมด (สำหรับยอดรวม)
+    setAllFilteredPosts(filtered)
     setClientPagination({
       currentPage: validPage,
       totalPages,
@@ -206,7 +226,7 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
     }
   }, [useClientSideSearch, allPosts])
 
-  // Debounced search effect
+  // Debounced search effect + campaign/KOL filter
   useEffect(() => {
     if (!useClientSideSearch) return
 
@@ -215,12 +235,73 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
     }, 300)
 
     return () => clearTimeout(timeoutId)
-  }, [searchQuery, dateFrom, dateTo, useClientSideSearch])
+  }, [searchQuery, dateFrom, dateTo, selectedCampaignIds, selectedKolNames, useClientSideSearch])
 
   const searchQueryLower = useMemo(
     () => searchQuery.trim().toLowerCase(),
     [searchQuery]
   )
+
+  const uniqueCampaigns = useMemo(() => {
+    const seen = new Set<string>()
+    const list: { id: string; name: string }[] = []
+    allPosts.forEach((p) => {
+      const id = p.campaign_id ?? ""
+      const name = (p.campaign_name ?? "").trim() || "-"
+      if (id && !seen.has(id)) {
+        seen.add(id)
+        list.push({ id, name })
+      }
+    })
+    return list.sort((a, b) => a.name.localeCompare(b.name))
+  }, [allPosts])
+
+  // KOL list กรองตาม campaign ที่เลือก
+  const uniqueKols = useMemo(() => {
+    const isAll = selectedCampaignIds.length === uniqueCampaigns.length
+    const postsInScope = isAll
+      ? allPosts
+      : allPosts.filter((p) => p.campaign_id && selectedCampaignIds.includes(p.campaign_id))
+    const seen = new Set<string>()
+    const list: string[] = []
+    postsInScope.forEach((p) => {
+      const n = (p.kol_name ?? "").trim() || "Unknown"
+      if (!seen.has(n)) {
+        seen.add(n)
+        list.push(n)
+      }
+    })
+    return list.sort((a, b) => a.localeCompare(b))
+  }, [allPosts, selectedCampaignIds, uniqueCampaigns.length])
+
+  const isAllCampaigns = selectedCampaignIds.length === uniqueCampaigns.length
+  const isAllKols = selectedKolNames.length === uniqueKols.length
+
+  // ตั้งค่าเริ่มต้นให้เลือกทั้งหมด แค่ครั้งเดียวเมื่อโหลดข้อมูล
+  useEffect(() => {
+    if (filterInitializedRef.current || uniqueCampaigns.length === 0) return
+    filterInitializedRef.current = true
+    setSelectedCampaignIds(uniqueCampaigns.map((c) => c.id))
+  }, [uniqueCampaigns])
+
+  // เมื่อ campaign เปลี่ยน → รีเซ็ต KOL เป็นเลือกทั้งหมด (เฉพาะ KOL ที่อยู่ใน campaign ที่เลือก)
+  useEffect(() => {
+    setSelectedKolNames([...uniqueKols])
+  }, [uniqueKols])
+
+  // ปิด dropdown เมื่อคลิกข้างนอก (ให้ฟีลเดียวกับ dashboard)
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (campaignDropdownRef.current && !campaignDropdownRef.current.contains(e.target as Node)) {
+        setCampaignDropdownOpen(false)
+      }
+      if (kolDropdownRef.current && !kolDropdownRef.current.contains(e.target as Node)) {
+        setKolDropdownOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   // Filter ตาม search + ช่วงวัน (for non-client-side search mode)
   const filteredPosts = useMemo(() => {
@@ -283,6 +364,8 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
     setSearchQuery("")
     setDateFrom("")
     setDateTo("")
+    setSelectedCampaignIds(uniqueCampaigns.map((c) => c.id))
+    setSelectedKolNames(uniqueKols)
   }
 
   const handleExport = () => {
@@ -292,6 +375,21 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
 
   const safeFilteredPosts = filteredPosts ?? []
   const safeInitialPosts = posts ?? []
+
+  // ยอดรวมตาม filter (จากรายการที่ filter ทั้งหมด ไม่ใช่แค่หน้านี้)
+  const totalsForFilter = useMemo(() => {
+    const list = useClientSideSearch ? allFilteredPosts : safeFilteredPosts
+    const n = list.length
+    if (n === 0)
+      return { count: 0, impressions: 0, reach: 0, engage: 0, budget: 0 }
+    return {
+      count: n,
+      impressions: list.reduce((s, p) => s + (p.total_impressions ?? 0), 0),
+      reach: list.reduce((s, p) => s + (p.total_reach ?? 0), 0),
+      engage: list.reduce((s, p) => s + (p.total_engage ?? 0), 0),
+      budget: list.reduce((s, p) => s + (p.total_budget ?? 0), 0),
+    }
+  }, [useClientSideSearch, allFilteredPosts, safeFilteredPosts])
 
   const handlePageChange = (page: number) => {
     if (page < 1 || page > totalPages || page === currentPage) {
@@ -347,8 +445,8 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
             </div>
           </div>
 
-          {/* Date Range Filter */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+          {/* Date Range + Campaign / KOL Filter (layout ให้เหมือน dashboard) */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
             <div className="flex items-center gap-2 flex-1">
               <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
               <Label
@@ -381,7 +479,153 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
                 min={dateFrom || undefined}
               />
             </div>
-            {(searchQuery || dateFrom || dateTo) && (
+            <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
+              <label className="text-xs sm:text-sm font-medium">Campaign</label>
+              <div className="relative" ref={campaignDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setCampaignDropdownOpen((prev) => !prev)}
+                  className="flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-xs sm:text-sm shadow-xs ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <span className="truncate text-left">
+                    {selectedCampaignIds.length === uniqueCampaigns.length
+                      ? `All Campaigns (${uniqueCampaigns.length})`
+                      : selectedCampaignIds.length === 1
+                        ? uniqueCampaigns.find((c) => c.id === selectedCampaignIds[0])?.name || "1 selected"
+                        : `${selectedCampaignIds.length}/${uniqueCampaigns.length} campaigns selected`}
+                  </span>
+                  <svg
+                    className="h-4 w-4 opacity-50 shrink-0"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+                {campaignDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-64 overflow-auto">
+                    <div className="p-2 border-b">
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => {
+                          if (selectedCampaignIds.length === uniqueCampaigns.length) {
+                            setSelectedCampaignIds([])
+                          } else {
+                            setSelectedCampaignIds(uniqueCampaigns.map((c) => c.id))
+                          }
+                        }}
+                      >
+                        {selectedCampaignIds.length === uniqueCampaigns.length ? "Deselect All" : "Select All"}
+                      </button>
+                    </div>
+                    {uniqueCampaigns.map((campaign) => {
+                      const isChecked = selectedCampaignIds.includes(campaign.id)
+                      return (
+                        <label
+                          key={campaign.id}
+                          className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent transition-colors text-sm"
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(checked) => {
+                              setSelectedCampaignIds((prev) => {
+                                if (checked) {
+                                  const next = prev.includes(campaign.id) ? prev : [...prev, campaign.id]
+                                  return next
+                                }
+                                const next = prev.filter((id) => id !== campaign.id)
+                                return next
+                              })
+                            }}
+                          />
+                          <span className="truncate">{campaign.name}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
+              <label className="text-xs sm:text-sm font-medium">KOL</label>
+              <div className="relative" ref={kolDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setKolDropdownOpen((prev) => !prev)}
+                  className="flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-xs sm:text-sm shadow-xs ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <span className="truncate text-left">
+                    {selectedKolNames.length === uniqueKols.length
+                      ? `All KOLs (${uniqueKols.length})`
+                      : `${selectedKolNames.length}/${uniqueKols.length} KOLs selected`}
+                  </span>
+                  <svg
+                    className="h-4 w-4 opacity-50 shrink-0"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+                {kolDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-64 overflow-auto">
+                    <div className="p-2 border-b">
+                      <button
+                        type="button"
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => {
+                          if (selectedKolNames.length === uniqueKols.length) {
+                            setSelectedKolNames([])
+                          } else {
+                            setSelectedKolNames(uniqueKols)
+                          }
+                        }}
+                      >
+                        {selectedKolNames.length === uniqueKols.length ? "Deselect All" : "Select All"}
+                      </button>
+                    </div>
+                    {uniqueKols.map((name) => {
+                      const isChecked = selectedKolNames.includes(name)
+                      return (
+                        <label
+                          key={name}
+                          className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent transition-colors text-sm"
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onCheckedChange={(checked) => {
+                              setSelectedKolNames((prev) => {
+                                if (checked) {
+                                  const next = prev.includes(name) ? prev : [...prev, name]
+                                  return next
+                                }
+                                const next = prev.filter((n) => n !== name)
+                                return next
+                              })
+                            }}
+                          />
+                          <span className="truncate">{name}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {(searchQuery || dateFrom || dateTo || selectedCampaignIds.length > 0 || selectedKolNames.length > 0) && (
               <Button
                 variant="outline"
                 size="sm"
@@ -401,7 +645,7 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
                 {useClientSideSearch ? (
                   <>
                     แสดง {safeFilteredPosts.length} รายการ (จากทั้งหมด {allPosts.length} รายการ)
-                    {(searchQuery || dateFrom || dateTo) && (
+                    {(searchQuery || dateFrom || dateTo || selectedCampaignIds.length > 0 || selectedKolNames.length > 0) && (
                       <span className="text-blue-600 ml-2">
                         ผลการค้นหา: {clientPagination.totalCount} รายการ
                       </span>
@@ -417,6 +661,18 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
               <>ไม่มีข้อมูล</>
             )}
           </div>
+
+          {/* ยอดรวมตาม filter */}
+          {totalsForFilter.count > 0 && (
+            <div className="flex flex-wrap items-center gap-4 py-2 px-3 rounded-md bg-muted/50 text-sm">
+              <span className="font-medium">ยอดรวม (ตาม filter):</span>
+              <span>{totalsForFilter.count} รายการ</span>
+              <span>Impressions: {formatNumber(totalsForFilter.impressions)}</span>
+              <span>Reach: {formatNumber(totalsForFilter.reach)}</span>
+              <span>Engage: {formatNumber(totalsForFilter.engage)}</span>
+              <span>Budget: {formatCurrency(totalsForFilter.budget)}</span>
+            </div>
+          )}
         </div>
       </CardHeader>
 
@@ -441,6 +697,7 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
                       <TableRow className="bg-gray-50 hover:bg-gray-50">
                         <TableHead className="font-semibold whitespace-nowrap">KOL Name</TableHead>
                         <TableHead className="font-semibold whitespace-nowrap">Post Name</TableHead>
+                        <TableHead className="font-semibold whitespace-nowrap">Campaign</TableHead>
                         <TableHead className="font-semibold whitespace-nowrap">Content / Caption</TableHead>
                         <TableHead className="font-semibold whitespace-nowrap">Platform</TableHead>
                         <TableHead className="font-semibold whitespace-nowrap">Date</TableHead>
@@ -457,7 +714,7 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
                     <TableBody>
                       {safeFilteredPosts.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={13} className="text-center py-12">
+                          <TableCell colSpan={14} className="text-center py-12">
                             <div className="flex flex-col items-center gap-2">
                               <p className="text-muted-foreground">
                                 {safeInitialPosts.length === 0 
@@ -491,6 +748,15 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
                               <Link href={`/posts/${post.id}`} className="text-black hover:underline">
                                 {post.post_name || "-"}
                               </Link>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap max-w-[140px]">
+                              {post.campaign_id && post.campaign_name ? (
+                                <Link href={`/campaigns/${post.campaign_id}`} className="text-black hover:underline truncate block">
+                                  {post.campaign_name}
+                                </Link>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
                             </TableCell>
                             <TableCell className="max-w-[200px]">
                               <div className="space-y-1">
@@ -556,6 +822,7 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
                       <TableRow className="bg-gray-50 hover:bg-gray-50">
                         <TableHead className="font-semibold whitespace-nowrap">KOL Name</TableHead>
                         <TableHead className="font-semibold whitespace-nowrap">Post Name</TableHead>
+                        <TableHead className="font-semibold whitespace-nowrap">Campaign</TableHead>
                         <TableHead className="font-semibold whitespace-nowrap">Content / Caption</TableHead>
                         <TableHead className="font-semibold whitespace-nowrap">Platform</TableHead>
                         <TableHead className="font-semibold whitespace-nowrap">Date</TableHead>
@@ -584,7 +851,7 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
                     <TableBody>
                       {safeFilteredPosts.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={25} className="text-center py-12">
+                          <TableCell colSpan={26} className="text-center py-12">
                             <div className="flex flex-col items-center gap-2">
                               <p className="text-muted-foreground">
                                 {safeInitialPosts.length === 0 
@@ -618,6 +885,15 @@ export function PostsListClient({ initialPosts = [], pagination, useClientSideSe
                               <Link href={`/posts/${post.id}`} className="text-black hover:underline">
                                 {post.post_name || "-"}
                               </Link>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap max-w-[140px]">
+                              {post.campaign_id && post.campaign_name ? (
+                                <Link href={`/campaigns/${post.campaign_id}`} className="text-black hover:underline truncate block">
+                                  {post.campaign_name}
+                                </Link>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
                             </TableCell>
                             <TableCell className="max-w-[200px]">
                               <div className="space-y-1">

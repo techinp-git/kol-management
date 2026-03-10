@@ -7,19 +7,15 @@ import { AccountsListClient } from "@/components/accounts-list-client"
 export default async function AccountsPage() {
   const supabase = await createClient()
 
-  // Fetch accounts with related data
+  // Fetch accounts with projects + campaigns (สำหรับนับโปรเจกต์/แคมเปญ และได้ campaign ids)
   const { data: accounts, error } = await supabase
     .from("accounts")
     .select(`
       *,
       projects (
         id,
-        total_budget,
         campaigns (
-          id,
-          campaign_kols (
-            kol_id
-          )
+          id
         )
       )
     `)
@@ -29,33 +25,70 @@ export default async function AccountsPage() {
     console.error("[v0] Error fetching accounts:", error)
   }
 
+  const allCampaignIds: string[] = []
+  const campaignToAccount: Record<string, string> = {}
+  ;(accounts || []).forEach((account: any) => {
+    account.projects?.forEach((project: any) => {
+      project.campaigns?.forEach((campaign: any) => {
+        if (campaign.id) {
+          allCampaignIds.push(campaign.id)
+          campaignToAccount[campaign.id] = account.id
+        }
+      })
+    })
+  })
+
+  // ดึงจาก posts ตาม join: posts → campaigns → projects → account, และ posts → kol_channels → kol_id
+  // (เทียบเท่า SELECT ... FROM posts p JOIN kol_channels kc ... JOIN campaigns c ... JOIN projects pm ... JOIN accounts a)
+  type AccountStats = { posts_count: number; total_paid_to_kols: number; kol_ids: Set<string> }
+  const statsByAccount: Record<string, AccountStats> = {}
+  if (allCampaignIds.length > 0) {
+    const { data: posts } = await supabase
+      .from("posts")
+      .select(`
+        campaign_id,
+        kol_channel_id,
+        kol_budget,
+        boost_budget,
+        campaigns (
+          projects (
+            account_id
+          )
+        ),
+        kol_channels (
+          kol_id
+        )
+      `)
+      .in("campaign_id", allCampaignIds)
+
+    ;(posts || []).forEach((p: any) => {
+      const accountId = p.campaigns?.projects?.account_id
+      if (!accountId) return
+      if (!statsByAccount[accountId]) {
+        statsByAccount[accountId] = { posts_count: 0, total_paid_to_kols: 0, kol_ids: new Set() }
+      }
+      statsByAccount[accountId].posts_count += 1
+      const kol = parseFloat(p.kol_budget?.toString() || "0") || 0
+      const boost = parseFloat(p.boost_budget?.toString() || "0") || 0
+      statsByAccount[accountId].total_paid_to_kols += kol + boost
+      const kolId = p.kol_channels?.kol_id
+      if (kolId) statsByAccount[accountId].kol_ids.add(kolId)
+    })
+  }
+
   // Calculate statistics for each account
   const accountsWithStats = (accounts || []).map((account: any) => {
     const projects = account.projects || []
     const projectsCount = projects.length
-    
-    // Count campaigns
+
     const campaignsCount = projects.reduce((sum: number, project: any) => {
       return sum + (project.campaigns?.length || 0)
     }, 0)
-    
-    // Count unique KOLs across all campaigns
-    const kolIds = new Set<string>()
-    projects.forEach((project: any) => {
-      project.campaigns?.forEach((campaign: any) => {
-        campaign.campaign_kols?.forEach((ck: any) => {
-          if (ck.kol_id) {
-            kolIds.add(ck.kol_id)
-          }
-        })
-      })
-    })
-    const kolsCount = kolIds.size
-    
-    // Calculate total budget from projects
-    const totalBudget = projects.reduce((sum: number, project: any) => {
-      return sum + (project.total_budget ? parseFloat(project.total_budget) : 0)
-    }, 0)
+
+    const stats = statsByAccount[account.id]
+    const kolsCount = stats ? stats.kol_ids.size : 0
+    const posts_count = stats?.posts_count ?? 0
+    const total_paid_to_kols = stats?.total_paid_to_kols ?? 0
 
     return {
       id: account.id,
@@ -75,7 +108,8 @@ export default async function AccountsPage() {
       projects_count: projectsCount,
       campaigns_count: campaignsCount,
       kols_count: kolsCount,
-      total_budget: totalBudget,
+      posts_count,
+      total_budget: total_paid_to_kols,
     }
   })
 

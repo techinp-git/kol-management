@@ -16,6 +16,8 @@ export function PostDetailClient({ post }: { post: any }) {
   const [statsDialogOpen, setStatsDialogOpen] = useState(false)
   const [commentsPage, setCommentsPage] = useState(1)
   const commentsPerPage = 20
+  // Filter คอมเมนต์ตาม intent ที่เลือก (ว่าง = แสดงทั้งหมด)
+  const [selectedIntentFilter, setSelectedIntentFilter] = useState<Set<string>>(new Set())
   const [isSaving, setIsSaving] = useState(false)
   const [editingMetric, setEditingMetric] = useState<any>(null)
   const [statsForm, setStatsForm] = useState({
@@ -39,17 +41,51 @@ export function PostDetailClient({ post }: { post: any }) {
     (a: any, b: any) => new Date(b.captured_at || b.recorded_at).getTime() - new Date(a.captured_at || a.recorded_at).getTime(),
   )
 
-  // Comments pagination logic
-  const totalComments = post.comments?.length || 0
-  const totalCommentsPages = Math.ceil(totalComments / commentsPerPage)
+  // Unique intents จาก comments (สำหรับปุ่ม filter)
+  const intentionList = (() => {
+    const counts: Record<string, number> = {}
+    post.comments?.forEach((c: any) => {
+      const intent = c.post_intention || "ไม่ระบุ"
+      counts[intent] = (counts[intent] || 0) + 1
+    })
+    return Object.entries(counts)
+      .map(([intention, count]) => ({ intention, count }))
+      .sort((a, b) => b.count - a.count)
+  })()
+
+  // กรองคอมเมนต์ตาม intent ที่เลือก
+  const filteredComments =
+    selectedIntentFilter.size === 0
+      ? post.comments || []
+      : (post.comments || []).filter((c: any) =>
+          selectedIntentFilter.has(c.post_intention || "ไม่ระบุ")
+        )
+
+  const totalComments = filteredComments.length
+  const totalCommentsPages = Math.max(1, Math.ceil(totalComments / commentsPerPage))
   const startIndex = (commentsPage - 1) * commentsPerPage
   const endIndex = startIndex + commentsPerPage
-  const paginatedComments = post.comments?.slice(startIndex, endIndex) || []
+  const paginatedComments = filteredComments.slice(startIndex, endIndex)
 
   const handleCommentsPageChange = (page: number) => {
     if (page >= 1 && page <= totalCommentsPages) {
       setCommentsPage(page)
     }
+  }
+
+  const toggleIntentFilter = (intention: string) => {
+    setSelectedIntentFilter((prev) => {
+      const next = new Set(prev)
+      if (next.has(intention)) next.delete(intention)
+      else next.add(intention)
+      return next
+    })
+    setCommentsPage(1)
+  }
+
+  const clearIntentFilter = () => {
+    setSelectedIntentFilter(new Set())
+    setCommentsPage(1)
   }
 
   const openAddStatsDialog = () => {
@@ -971,11 +1007,38 @@ export function PostDetailClient({ post }: { post: any }) {
                       ))}
                     </div>
                     <div className="mt-3 text-xs text-gray-500 text-center">
-                      รวมคอมเมนต์ทั้งหมด: {totalComments} รายการ
+                      รวมคอมเมนต์ทั้งหมด: {post.comments?.length || 0} รายการ
+                      {selectedIntentFilter.size > 0 && (
+                        <span className="ml-2 text-blue-600">
+                          (แสดงเฉพาะที่เลือก: {totalComments} รายการ)
+                        </span>
+                      )}
                     </div>
                   </div>
                 )
               })()}
+
+              {/* Filter ตาม Intent - ปุ่มกดเลือก */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-muted-foreground">แสดงเฉพาะ:</span>
+                <Button
+                  variant={selectedIntentFilter.size === 0 ? "default" : "outline"}
+                  size="sm"
+                  onClick={clearIntentFilter}
+                >
+                  ทั้งหมด
+                </Button>
+                {intentionList.map(({ intention, count }) => (
+                  <Button
+                    key={intention}
+                    variant={selectedIntentFilter.has(intention) ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => toggleIntentFilter(intention)}
+                  >
+                    {intention} ({count})
+                  </Button>
+                ))}
+              </div>
 
               {/* Comments List */}
               <div className="space-y-4">

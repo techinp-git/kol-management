@@ -222,13 +222,21 @@ export default function KOLPostDetailDashboard({
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  // Fetch and process data
+  // Fetch and process data — only when all filters selected (Account, Project, Campaign, Channel, Post Name)
   const fetchPostDetailData = useCallback(async () => {
-    if (!selectedAccount) {
+    const filtersComplete =
+      selectedAccount &&
+      selectedProject &&
+      selectedCampaigns.length > 0 &&
+      selectedChannels.length > 0 &&
+      selectedPosts.length > 0
+
+    if (!filtersComplete) {
       setError(null)
       setChannelLevelData([])
       setKolLevelData([])
       setGrandTotal(null)
+      setLoading(false)
       return
     }
 
@@ -898,19 +906,25 @@ export default function KOLPostDetailDashboard({
         </CardContent>
       </Card>
 
-      {/* Info message when no account selected */}
-      {!selectedAccount && !loading && (
-        <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
-          <CardHeader>
-            <CardTitle className="text-blue-900 dark:text-blue-100">กรุณาเลือก Account</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-blue-800 dark:text-blue-200">
-              กรุณาเลือก Account เพื่อดูข้อมูล KOL Post Detail
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      {/* Info message when filters incomplete */}
+      {!loading &&
+        (!selectedAccount ||
+          !selectedProject ||
+          selectedCampaigns.length === 0 ||
+          selectedChannels.length === 0 ||
+          selectedPosts.length === 0) &&
+        !error && (
+          <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+            <CardHeader>
+              <CardTitle className="text-blue-900 dark:text-blue-100">กรุณาเลือก Filter ให้ครบ</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                กรุณาเลือก Account, Project, Campaign, Channel และ Post Name อย่างน้อย 1 รายการ เพื่อดูข้อมูล KOL Post Detail
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
       {error && (
         <Card className="border-destructive">
@@ -923,7 +937,12 @@ export default function KOLPostDetailDashboard({
         </Card>
       )}
 
-      {debugInfo && (
+      {debugInfo &&
+        selectedAccount &&
+        selectedProject &&
+        selectedCampaigns.length > 0 &&
+        selectedChannels.length > 0 &&
+        selectedPosts.length > 0 && (
         <Card className="border-blue-200 bg-blue-50/50">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -982,7 +1001,11 @@ export default function KOLPostDetailDashboard({
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin" />
         </div>
-      ) : (
+      ) : selectedAccount &&
+        selectedProject &&
+        selectedCampaigns.length > 0 &&
+        selectedChannels.length > 0 &&
+        selectedPosts.length > 0 ? (
         <>
           {/* SECTION A: Channel Level Summary */}
           <Card>
@@ -1170,7 +1193,7 @@ export default function KOLPostDetailDashboard({
             </CardContent>
           </Card>
         </>
-      )}
+      ) : null}
     </div>
   )
 }

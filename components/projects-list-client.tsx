@@ -14,6 +14,9 @@ import {
   Pencil,
   Trash2,
   DollarSign,
+  Megaphone,
+  Users,
+  FileText,
 } from "lucide-react"
 import Link from "next/link"
 import { Input } from "@/components/ui/input"
@@ -44,6 +47,15 @@ type Project = {
     name: string
   } | null
   campaigns_count?: number
+  kols_count?: number
+  posts_count?: number
+}
+
+function formatBudget(value: number | undefined | null): string {
+  if (value == null || value === 0) return "0"
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return value.toLocaleString("th-TH")
 }
 
 export function ProjectsListClient({ initialProjects }: { initialProjects: Project[] }) {
@@ -225,46 +237,52 @@ export function ProjectsListClient({ initialProjects }: { initialProjects: Proje
                           </Badge>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-3 pt-4 border-t">
+                        <div className="grid grid-cols-4 gap-3 pt-4 border-t">
                           <div className="text-center">
                             <div className="flex items-center justify-center mb-1">
-                              <Calendar className="h-4 w-4 text-muted-foreground" />
+                              <Megaphone className="h-4 w-4 text-muted-foreground" />
                             </div>
-                            <p className="text-sm font-semibold text-black">
-                              {project.start_date
-                                ? new Date(project.start_date).toLocaleDateString("th-TH", {
-                                    month: "short",
-                                    year: "numeric",
-                                  })
-                                : "-"}
-                            </p>
+                            <p className="text-2xl font-bold text-black">{project.campaigns_count || 0}</p>
+                            <p className="text-xs text-muted-foreground">แคมเปญ</p>
+                          </div>
+                          <div className="text-center">
+                            <div className="flex items-center justify-center mb-1">
+                              <Users className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                            <p className="text-2xl font-bold text-black">{project.kols_count || 0}</p>
+                            <p className="text-xs text-muted-foreground">KOLs</p>
+                          </div>
+                          <div className="text-center">
+                            <div className="flex items-center justify-center mb-1">
+                              <FileText className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                            <p className="text-2xl font-bold text-black">{project.posts_count || 0}</p>
+                            <p className="text-xs text-muted-foreground">Posts</p>
+                          </div>
+                          <div className="text-center">
+                            <div className="flex items-center justify-center mb-1">
+                              <span className="text-xs text-muted-foreground">฿</span>
+                            </div>
+                            <p className="text-lg font-bold text-black">{formatBudget(project.total_budget)}</p>
+                            <p className="text-xs text-muted-foreground">งบจ่าย KOL</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 pt-3 border-t">
+                          <div className="text-center">
                             <p className="text-xs text-muted-foreground">เริ่มต้น</p>
-                          </div>
-                          <div className="text-center">
-                            <div className="flex items-center justify-center mb-1">
-                              <Calendar className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                            <p className="text-sm font-semibold text-black">
-                              {project.end_date
-                                ? new Date(project.end_date).toLocaleDateString("th-TH", {
-                                    month: "short",
-                                    year: "numeric",
-                                  })
+                            <p className="text-sm font-medium">
+                              {project.start_date
+                                ? new Date(project.start_date).toLocaleDateString("th-TH", { month: "short", year: "numeric" })
                                 : "-"}
                             </p>
-                            <p className="text-xs text-muted-foreground">สิ้นสุด</p>
                           </div>
                           <div className="text-center">
-                            <div className="flex items-center justify-center mb-1">
-                              <DollarSign className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                            <p className="text-lg font-bold text-black">
-                              {project.total_budget
-                                ? (project.total_budget / 1000000).toFixed(1)
-                                : "0"}
-                              M
+                            <p className="text-xs text-muted-foreground">สิ้นสุด</p>
+                            <p className="text-sm font-medium">
+                              {project.end_date
+                                ? new Date(project.end_date).toLocaleDateString("th-TH", { month: "short", year: "numeric" })
+                                : "-"}
                             </p>
-                            <p className="text-xs text-muted-foreground">งบประมาณ</p>
                           </div>
                         </div>
                       </div>
@@ -317,16 +335,19 @@ export function ProjectsListClient({ initialProjects }: { initialProjects: Proje
                     <TableHead className="font-bold">โปรเจกต์</TableHead>
                     <TableHead className="font-bold">บัญชี</TableHead>
                     <TableHead className="font-bold">สถานะ</TableHead>
+                    <TableHead className="font-bold text-center">แคมเปญ</TableHead>
+                    <TableHead className="font-bold text-center">KOLs</TableHead>
+                    <TableHead className="font-bold text-center">Posts</TableHead>
+                    <TableHead className="font-bold text-right">งบจ่าย KOL</TableHead>
                     <TableHead className="font-bold">วันที่เริ่มต้น</TableHead>
                     <TableHead className="font-bold">วันที่สิ้นสุด</TableHead>
-                    <TableHead className="font-bold text-right">งบประมาณ</TableHead>
                     <TableHead className="font-bold text-center">จัดการ</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredProjects.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-12">
+                      <TableCell colSpan={10} className="text-center py-12">
                         <p className="text-muted-foreground">ไม่พบโปรเจกต์</p>
                       </TableCell>
                     </TableRow>
@@ -359,6 +380,18 @@ export function ProjectsListClient({ initialProjects }: { initialProjects: Proje
                             {getStatusText(project.status)}
                           </Badge>
                         </TableCell>
+                        <TableCell className="text-center">
+                          <p className="font-bold">{project.campaigns_count ?? 0}</p>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <p className="font-bold">{project.kols_count ?? 0}</p>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <p className="font-bold">{project.posts_count ?? 0}</p>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <p className="font-bold">฿{formatBudget(project.total_budget)}</p>
+                        </TableCell>
                         <TableCell>
                           {project.start_date
                             ? new Date(project.start_date).toLocaleDateString("th-TH")
@@ -366,11 +399,6 @@ export function ProjectsListClient({ initialProjects }: { initialProjects: Proje
                         </TableCell>
                         <TableCell>
                           {project.end_date ? new Date(project.end_date).toLocaleDateString("th-TH") : "-"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <p className="font-bold">
-                            {project.total_budget ? `฿${(project.total_budget / 1000000).toFixed(1)}M` : "-"}
-                          </p>
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2 justify-center">

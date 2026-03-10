@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Search, Building2, FolderKanban, Megaphone, Users, Star, LayoutGrid, List, Pencil, Trash2 } from "lucide-react"
+import { Search, Building2, FolderKanban, Megaphone, Users, Star, LayoutGrid, List, Pencil, Trash2, FileText } from "lucide-react"
 import Link from "next/link"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -38,7 +38,15 @@ type Account = {
   projects_count?: number
   campaigns_count?: number
   kols_count?: number
+  posts_count?: number
   total_budget?: number
+}
+
+function formatBudget(value: number | undefined): string {
+  if (value == null || value === 0) return "0"
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return value.toLocaleString("th-TH")
 }
 
 export function AccountsListClient({ initialAccounts }: { initialAccounts: Account[] }) {
@@ -310,12 +318,19 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
                           </div>
                           <div className="text-center">
                             <div className="flex items-center justify-center mb-1">
+                              <FileText className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                            <p className="text-2xl font-bold text-black">{account.posts_count || 0}</p>
+                            <p className="text-xs text-muted-foreground">Posts</p>
+                          </div>
+                          <div className="text-center">
+                            <div className="flex items-center justify-center mb-1">
                               <span className="text-xs text-muted-foreground">฿</span>
                             </div>
                             <p className="text-lg font-bold text-black">
-                              {account.total_budget ? (account.total_budget / 1000000).toFixed(1) : "0"}M
+                              {formatBudget(account.total_budget)}
                             </p>
-                            <p className="text-xs text-muted-foreground">งบประมาณ</p>
+                            <p className="text-xs text-muted-foreground">งบจ่าย KOL</p>
                           </div>
                         </div>
                       </div>
@@ -349,7 +364,8 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
                     <TableHead className="font-bold text-center">โปรเจกต์</TableHead>
                     <TableHead className="font-bold text-center">แคมเปญ</TableHead>
                     <TableHead className="font-bold text-center">KOLs</TableHead>
-                    <TableHead className="font-bold text-right">งบประมาณ</TableHead>
+                    <TableHead className="font-bold text-center">Posts</TableHead>
+                    <TableHead className="font-bold text-right">งบจ่าย KOL</TableHead>
                     <TableHead className="font-bold text-center">จัดการ</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -426,10 +442,13 @@ export function AccountsListClient({ initialAccounts }: { initialAccounts: Accou
                           <p className="text-xl font-bold">{account.kols_count || 0}</p>
                         </div>
                       </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex flex-col items-center">
+                          <p className="text-xl font-bold">{account.posts_count || 0}</p>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right">
-                        <p className="font-bold">
-                          ฿{account.total_budget ? (account.total_budget / 1000000).toFixed(1) : "0"}M
-                        </p>
+                        <p className="font-bold">฿{formatBudget(account.total_budget)}</p>
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2 justify-center">

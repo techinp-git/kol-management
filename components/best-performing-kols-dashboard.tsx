@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { TrendingUp, Download, Loader2, Trophy, Users as UsersIcon, Eye, Heart, MessageSquare, Share2, ChevronDown } from "lucide-react"
@@ -57,7 +56,7 @@ interface SortingTableRow {
   budgetBoost: number
 }
 
-type RankingKPI = "er" | "engagement" | "reach" | "view" | "cpr"
+type RankingKPI = "er" | "engagement" | "reach" | "view" | "cpr" | "cpv"
 type SortField = "kolName" | "channel" | "follower" | "imp" | "reach" | "engage" | "view" | "er" | "cpr" | "cpe" | "cpv" | "linkClick" | "budgetBoost"
 type SortOrder = "asc" | "desc"
 
@@ -68,6 +67,7 @@ const RANKING_KPIS: { value: RankingKPI; label: string }[] = [
   { value: "reach", label: "Highest Reach" },
   { value: "view", label: "Highest View" },
   { value: "cpr", label: "Lowest CPR" },
+  { value: "cpv", label: "Lowest CPV" },
 ]
 
 export default function BestPerformingKOLsDashboard({
@@ -89,12 +89,18 @@ export default function BestPerformingKOLsDashboard({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [accountDropdownOpen, setAccountDropdownOpen] = useState(false)
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
   const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false)
   const [channelDropdownOpen, setChannelDropdownOpen] = useState(false)
   const [postDropdownOpen, setPostDropdownOpen] = useState(false)
+  const [rankingKpiDropdownOpen, setRankingKpiDropdownOpen] = useState(false)
+  const accountDropdownRef = useRef<HTMLDivElement>(null)
+  const projectDropdownRef = useRef<HTMLDivElement>(null)
   const campaignDropdownRef = useRef<HTMLDivElement>(null)
   const channelDropdownRef = useRef<HTMLDivElement>(null)
   const postDropdownRef = useRef<HTMLDivElement>(null)
+  const rankingKpiDropdownRef = useRef<HTMLDivElement>(null)
 
   // Data
   const [top5KOLs, setTop5KOLs] = useState<KOLCardData[]>([])
@@ -196,20 +202,31 @@ export default function BestPerformingKOLsDashboard({
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
+      if (accountDropdownRef.current && !accountDropdownRef.current.contains(e.target as Node)) setAccountDropdownOpen(false)
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) setProjectDropdownOpen(false)
       if (campaignDropdownRef.current && !campaignDropdownRef.current.contains(e.target as Node)) setCampaignDropdownOpen(false)
       if (channelDropdownRef.current && !channelDropdownRef.current.contains(e.target as Node)) setChannelDropdownOpen(false)
       if (postDropdownRef.current && !postDropdownRef.current.contains(e.target as Node)) setPostDropdownOpen(false)
+      if (rankingKpiDropdownRef.current && !rankingKpiDropdownRef.current.contains(e.target as Node)) setRankingKpiDropdownOpen(false)
     }
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  // Fetch and process data
+  // Fetch and process data — only when Account, Project, and at least one Campaign selected
   const fetchBestPerformingData = useCallback(async () => {
-    if (!selectedAccount) {
+    const filtersComplete =
+      selectedAccount &&
+      selectedProject &&
+      selectedCampaigns.length > 0 &&
+      selectedChannels.length > 0 &&
+      selectedPosts.length > 0
+
+    if (!filtersComplete) {
       setError(null)
       setTop5KOLs([])
       setSortingTableData([])
+      setLoading(false)
       return
     }
 
@@ -549,6 +566,8 @@ export default function BestPerformingKOLsDashboard({
         sortedForTop5.sort((a, b) => b.view - a.view)
       } else if (rankingKPI === "cpr") {
         sortedForTop5.sort((a, b) => a.cpr - b.cpr) // Lowest CPR is best
+      } else if (rankingKPI === "cpv") {
+        sortedForTop5.sort((a, b) => a.cpv - b.cpv) // Lowest CPV is best
       }
 
       const top5 = sortedForTop5.slice(0, 5)
@@ -643,40 +662,69 @@ export default function BestPerformingKOLsDashboard({
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <div>
+            {/* Account Dropdown */}
+            <div ref={accountDropdownRef} className="relative">
               <label className="text-sm font-medium mb-2 block">Account</label>
-              <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
+              <button
+                type="button"
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                onClick={() => setAccountDropdownOpen(!accountDropdownOpen)}
+              >
+                <span className="truncate">
+                  {selectedAccount ? accounts.find((a: any) => a.id === selectedAccount)?.name || "Select Account" : "Select Account"}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </button>
+              {accountDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-60 overflow-y-auto">
+                  {accounts.map((account: any) => (
+                    <div
+                      key={account.id}
+                      className={`px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer text-sm ${selectedAccount === account.id ? "bg-accent font-medium" : ""}`}
+                      onClick={() => {
+                        setSelectedAccount(account.id)
+                        setAccountDropdownOpen(false)
+                      }}
+                    >
                       {account.name}
-                    </SelectItem>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
-            <div>
+
+            {/* Project Dropdown */}
+            <div ref={projectDropdownRef} className="relative">
               <label className="text-sm font-medium mb-2 block">Project</label>
-              <Select
-                value={selectedProject}
-                onValueChange={setSelectedProject}
+              <button
+                type="button"
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => selectedAccount && setProjectDropdownOpen(!projectDropdownOpen)}
                 disabled={!selectedAccount}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
+                <span className="truncate">
+                  {selectedProject ? projects.find((p: any) => p.id === selectedProject)?.name || "Select Project" : "Select Project"}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </button>
+              {projectDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-60 overflow-y-auto">
+                  {projects.map((project: any) => (
+                    <div
+                      key={project.id}
+                      className={`px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer text-sm ${selectedProject === project.id ? "bg-accent font-medium" : ""}`}
+                      onClick={() => {
+                        setSelectedProject(project.id)
+                        setProjectDropdownOpen(false)
+                      }}
+                    >
                       {project.name}
-                    </SelectItem>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
+
             {/* Campaign Multi-Select */}
             <div ref={campaignDropdownRef} className="relative">
               <label className="text-sm font-medium mb-2 block">Campaign</label>
@@ -838,38 +886,59 @@ export default function BestPerformingKOLsDashboard({
                 </div>
               )}
             </div>
-            <div>
+            {/* Ranking KPI Dropdown */}
+            <div ref={rankingKpiDropdownRef} className="relative">
               <label className="text-sm font-medium mb-2 block">Ranking KPI</label>
-              <Select value={rankingKPI} onValueChange={(value) => setRankingKPI(value as RankingKPI)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select KPI" />
-                </SelectTrigger>
-                <SelectContent>
+              <button
+                type="button"
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                onClick={() => setRankingKpiDropdownOpen(!rankingKpiDropdownOpen)}
+              >
+                <span className="truncate">
+                  {RANKING_KPIS.find((k) => k.value === rankingKPI)?.label || "Select KPI"}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+              </button>
+              {rankingKpiDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-60 overflow-y-auto">
                   {RANKING_KPIS.map((kpi) => (
-                    <SelectItem key={kpi.value} value={kpi.value}>
+                    <div
+                      key={kpi.value}
+                      className={`px-2 py-1.5 hover:bg-accent rounded-sm cursor-pointer text-sm ${rankingKPI === kpi.value ? "bg-accent font-medium" : ""}`}
+                      onClick={() => {
+                        setRankingKPI(kpi.value)
+                        setRankingKpiDropdownOpen(false)
+                      }}
+                    >
                       {kpi.label}
-                    </SelectItem>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Info message when no account selected */}
-      {!selectedAccount && !loading && (
-        <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
-          <CardHeader>
-            <CardTitle className="text-blue-900 dark:text-blue-100">กรุณาเลือก Account</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-blue-800 dark:text-blue-200">
-              กรุณาเลือก Account เพื่อดูข้อมูล Best Performing KOLs
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      {/* Info message when filters incomplete */}
+      {!loading &&
+        (!selectedAccount ||
+          !selectedProject ||
+          selectedCampaigns.length === 0 ||
+          selectedChannels.length === 0 ||
+          selectedPosts.length === 0) &&
+        !error && (
+          <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+            <CardHeader>
+              <CardTitle className="text-blue-900 dark:text-blue-100">กรุณาเลือก Filter ให้ครบ</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                กรุณาเลือก Account, Project, Campaign, Channel และ Post Name อย่างน้อย 1 รายการ เพื่อดูข้อมูล Best Performing KOLs
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
       {error && (
         <Card className="border-destructive">
@@ -886,7 +955,11 @@ export default function BestPerformingKOLsDashboard({
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin" />
         </div>
-      ) : (
+      ) : selectedAccount &&
+        selectedProject &&
+        selectedCampaigns.length > 0 &&
+        selectedChannels.length > 0 &&
+        selectedPosts.length > 0 ? (
         <>
           {/* TOP SECTION: Top 5 Best Performing KOLs */}
           <div>
@@ -1045,7 +1118,7 @@ export default function BestPerformingKOLsDashboard({
             </CardContent>
           </Card>
         </>
-      )}
+      ) : null}
     </div>
   )
 }

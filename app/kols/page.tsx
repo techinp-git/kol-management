@@ -73,8 +73,43 @@ export default async function KOLsPage({ searchParams }: KOLsPageProps) {
     console.error("[v0] Error fetching KOLs:", error)
   }
 
-  const totalCount = allKols?.length || 0
+  // Fetch campaigns for filter
+  const { data: campaigns } = await supabase
+    .from("campaigns")
+    .select("id, name")
+    .order("name", { ascending: true })
 
+  // Build campaign_id -> kol_id[] จาก posts (เทียบเท่า query: posts ⋈ kol_channels ⋈ kols)
+  // เลือก campaign แล้วจะแสดงเฉพาะ KOL ที่มีโพสต์ใน campaign นั้นจริง
+  const { data: postsForCampaign } = await supabase
+    .from("posts")
+    .select("campaign_id, kol_channels(kol_id)")
+  const campaignKolIds: Record<string, string[]> = {}
+  postsForCampaign?.forEach((row: any) => {
+    const cid = row.campaign_id
+    const kolId = row.kol_channels?.kol_id
+    if (cid && kolId) {
+      if (!campaignKolIds[cid]) campaignKolIds[cid] = []
+      if (!campaignKolIds[cid].includes(kolId)) campaignKolIds[cid].push(kolId)
+    }
+  })
+
+  // Build kol_id -> { postCount, totalPaid } from posts
+  const { data: postsForStats } = await supabase
+    .from("posts")
+    .select("kol_channel_id, kol_budget, boost_budget, kol_channels(kol_id)")
+  const kolStats: Record<string, { postCount: number; totalPaid: number }> = {}
+  postsForStats?.forEach((row: any) => {
+    const kolId = row.kol_channels?.kol_id
+    if (!kolId) return
+    if (!kolStats[kolId]) kolStats[kolId] = { postCount: 0, totalPaid: 0 }
+    kolStats[kolId].postCount += 1
+    const kolBudget = parseFloat(row.kol_budget?.toString() || "0") || 0
+    const boostBudget = parseFloat(row.boost_budget?.toString() || "0") || 0
+    kolStats[kolId].totalPaid += kolBudget + boostBudget
+  })
+
+  const totalCount = allKols?.length || 0
 
   return (
     <div className="space-y-8">
@@ -91,8 +126,11 @@ export default async function KOLsPage({ searchParams }: KOLsPageProps) {
         </Link>
       </div>
 
-      <KOLsListClient 
-        initialKOLs={allKols || []} 
+      <KOLsListClient
+        initialKOLs={allKols || []}
+        initialCampaigns={campaigns || []}
+        campaignKolIds={campaignKolIds}
+        kolStats={kolStats}
         currentPage={currentPage}
         totalPages={Math.ceil(totalCount / itemsPerPage)}
         totalCount={totalCount}

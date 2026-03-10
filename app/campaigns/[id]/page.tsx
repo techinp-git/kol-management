@@ -6,7 +6,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
   const { id } = await params
   const supabase = await createClient()
 
-  // Fetch campaign with related data
+  // ชุด query เดียวกับหน้า list: campaign + projects
   const { data: campaign, error } = await supabase
     .from("campaigns")
     .select(`
@@ -18,25 +18,6 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
           id,
           name
         )
-      ),
-      campaign_kols (
-        id,
-        kol_id,
-        kol_channel_id,
-        allocated_budget,
-        status,
-        notes,
-        kol:kol_id (
-          id,
-          name,
-          handle
-        ),
-        kol_channel:kol_channel_id (
-          id,
-          channel_type,
-          handle,
-          follower_count
-        )
       )
     `)
     .eq("id", id)
@@ -47,32 +28,59 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     notFound()
   }
 
-  // Map campaign data
+  // ดึง campaign_kols แยก สำหรับตาราง "KOL ที่เลือก" (join kols/kol_channels เอง)
+  const { data: campaignKolsRows } = await supabase
+    .from("campaign_kols")
+    .select("id, kol_id, kol_channel_id, allocated_budget, status, notes")
+    .eq("campaign_id", id)
+
+  const kolIds = [...new Set((campaignKolsRows || []).map((r: any) => r.kol_id).filter(Boolean))]
+  const channelIds = [...new Set((campaignKolsRows || []).map((r: any) => r.kol_channel_id).filter(Boolean))]
+
+  let kolsMap: Record<string, any> = {}
+  let kolChannelsMap: Record<string, any> = {}
+  if (kolIds.length > 0) {
+    const { data: kolsData } = await supabase.from("kols").select("id, name, handle").in("id", kolIds)
+    kolsData?.forEach((k: any) => { kolsMap[k.id] = k })
+  }
+  if (channelIds.length > 0) {
+    const { data: channelsData } = await supabase.from("kol_channels").select("id, channel_type, handle, follower_count").in("id", channelIds)
+    channelsData?.forEach((c: any) => { kolChannelsMap[c.id] = c })
+  }
+
+  const campaignKolsMapped = (campaignKolsRows || []).map((ck: any) => ({
+    ...ck,
+    kol: ck.kol_id ? kolsMap[ck.kol_id] ?? null : null,
+    kol_channel: ck.kol_channel_id ? kolChannelsMap[ck.kol_channel_id] ?? null : null,
+  }))
+
+  // map campaign แบบเดียวกับ list (ใช้ campaign.projects เหมือน list)
+  const project = campaign.projects
   const mappedCampaign = {
     id: campaign.id,
     name: campaign.name,
     project_id: campaign.project_id,
-    project: campaign.projects ? {
-      id: campaign.projects.id,
-      name: campaign.projects.name,
-      account: campaign.projects.accounts ? {
-        id: campaign.projects.accounts.id,
-        name: campaign.projects.accounts.name,
-      } : null,
-    } : null,
-    objective: campaign.objective,
-    kpi_targets: campaign.kpi_targets,
-    start_date: campaign.start_date,
-    end_date: campaign.end_date,
-    channels: campaign.channels || [],
-    status: campaign.status,
-    budget: campaign.budget ? parseFloat(campaign.budget) : null,
-    notes: campaign.notes,
-    campaign_kols: campaign.campaign_kols || [],
+    project: project
+      ? {
+          id: project.id,
+          name: project.name,
+          account: project.accounts ? { id: project.accounts.id, name: project.accounts.name } : null,
+        }
+      : null,
+    objective: campaign.objective ?? null,
+    kpi_targets: campaign.kpi_targets ?? null,
+    start_date: campaign.start_date ?? null,
+    end_date: campaign.end_date ?? null,
+    channels: Array.isArray(campaign.channels) ? campaign.channels : campaign.channels ? [campaign.channels] : [],
+    status: campaign.status ?? "draft",
+    budget: campaign.budget != null && campaign.budget !== "" ? parseFloat(String(campaign.budget)) : null,
+    notes: campaign.notes ?? null,
+    campaign_kols: campaignKolsMapped,
     created_at: campaign.created_at,
     updated_at: campaign.updated_at,
   }
 
+  // ชุด query posts เดียวกับ list (ใช้ผลเดียวกันทั้ง aggregate และรายการโพสต์)
   const { data: posts, error: postsError } = await supabase
     .from("posts")
     .select(`
@@ -89,6 +97,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         id,
         channel_type,
         handle,
+        kol_id,
         kols (
           id,
           name
@@ -100,6 +109,25 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
 
   if (postsError) {
     console.error("[v0] Error fetching campaign posts:", postsError)
+  }
+
+  const kolIdsFromPosts = new Set<string>()
+  const channelTypesFromPosts = new Set<string>()
+  let costFromPosts = 0
+  ;(posts || []).forEach((p: any) => {
+    const kolId = p.kol_channels?.kol_id
+    if (kolId) kolIdsFromPosts.add(kolId)
+    const ch = p.kol_channels?.channel_type
+    if (ch) channelTypesFromPosts.add(ch)
+    costFromPosts += parseFloat(p.kol_budget?.toString() || "0") + parseFloat(p.boost_budget?.toString() || "0")
+  })
+
+  const mappedCampaignWithStats = {
+    ...mappedCampaign,
+    kols_count: kolIdsFromPosts.size,
+    channels_count: Math.max(channelTypesFromPosts.size, mappedCampaign.channels?.length ?? 0),
+    total_allocated_from_posts: costFromPosts,
+    channels_display: mappedCampaign.channels?.length ? mappedCampaign.channels : [...channelTypesFromPosts],
   }
 
   const mappedPosts =
@@ -128,5 +156,5 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
         : null,
     })) ?? []
 
-  return <CampaignDetailClient campaign={mappedCampaign} posts={mappedPosts} />
+  return <CampaignDetailClient campaign={mappedCampaignWithStats} posts={mappedPosts} />
 }

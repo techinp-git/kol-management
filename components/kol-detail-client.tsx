@@ -617,7 +617,7 @@ export function KOLDetailClient({
                                 href={`/posts/${post.id}`}
                                 className="block rounded-lg border bg-muted/30 p-3 transition-colors hover:bg-muted/50"
                               >
-                                <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-start justify-between gap-3">
                                   <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium truncate">{post.post_name || "ไม่มีชื่อ"}</p>
                                     {post.posted_at && (
@@ -634,6 +634,29 @@ export function KOLDetailClient({
                                         แคมเปญ: {post.campaigns.name}
                                       </p>
                                     )}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground shrink-0">
+                                    <span title="Impression">
+                                      Imp: {typeof post._impression === "number" ? post._impression.toLocaleString() : "-"}
+                                    </span>
+                                    <span title="Reach">
+                                      Reach: {typeof post._reach === "number" ? post._reach.toLocaleString() : "-"}
+                                    </span>
+                                    <span title="Engage">
+                                      Engage: {typeof post._engage === "number" ? post._engage.toLocaleString() : "-"}
+                                    </span>
+                                    <span title="ค่าตัว">
+                                      ค่าตัว: {typeof post._cost === "number" && post._cost > 0 ? `${post._cost.toLocaleString("th-TH")} บาท` : "-"}
+                                    </span>
+                                    <span
+                                      title={
+                                        post._sentimentDetail
+                                          ? `Positive ${post._sentimentDetail.positive} / Neutral ${post._sentimentDetail.neutral} / Negative ${post._sentimentDetail.negative}${post._sentimentDetail.unclassified ? ` / ไม่ระบุ ${post._sentimentDetail.unclassified}` : ""}`
+                                          : "Brand sentiment จาก comment"
+                                      }
+                                    >
+                                      Sentiment: {post._sentiment ?? "-"}
+                                    </span>
                                   </div>
                                   <div className="flex items-center gap-2 flex-shrink-0">
                                     {post.content_type && (

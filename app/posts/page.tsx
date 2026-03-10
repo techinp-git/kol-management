@@ -26,7 +26,7 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
     
   console.log("[v0] Posts page - fetching all data for client-side search")
 
-  // --- Fetch ALL posts for client-side search ---
+  // --- Fetch posts ตาม join + post_metrics แบบฝังใน query เดียว (เหมือนหน้า campaign) ---
   const {
     data: allPosts,
     error,
@@ -51,14 +51,32 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
         id,
         name,
         project_id,
-        projects!left (
+        projects (
           id,
-          name
-        ),
-        campaign_kols (
-          kol_id,
-          allocated_budget
+          name,
+          accounts (
+            id,
+            name
+          )
         )
+      ),
+      comments!left (
+        id
+      ),
+      post_metrics (
+        impressions_organic,
+        impressions_boost,
+        reach_organic,
+        reach_boost,
+        likes,
+        comments,
+        shares,
+        saves,
+        post_clicks,
+        link_clicks,
+        retweets,
+        views,
+        captured_at
       )
     `,
       { count: "exact" }
@@ -124,106 +142,30 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
     )
   }
 
-  // --------------------------------------------------
-  // 🔥 Optimize: ดึง metrics ทีเดียว ไม่ query ทีละ post
-  // --------------------------------------------------
-  const postIds = posts.map((p: any) => p.id).filter(Boolean)
-
-  let latestMetricsByPostId = new Map<string, any>()
-
-  if (postIds.length > 0) {
-    try {
-      // Filter out any invalid post IDs
-      const validPostIds = postIds.filter((id: any) => id && typeof id === 'string' && id.length > 0)
-      
-      if (validPostIds.length === 0) {
-        console.warn("[v0] No valid post IDs to fetch metrics for")
-      } else {
-        const {
-          data: metricsRows,
-          error: metricsError,
-        } = await supabase
-          .from("post_metrics")
-          .select("*")
-          .in("post_id", validPostIds)
-          // sort ให้ post_id ก่อน แล้วค่อย captured_at desc
-          .order("post_id", { ascending: true })
-          .order("captured_at", { ascending: false })
-
-        if (metricsError) {
-          // Check if this is a network error or a query error
-          const errorMessage = metricsError?.message || String(metricsError) || "Unknown error"
-          const isNetworkError = errorMessage.includes("fetch failed") || 
-                                 errorMessage.includes("NetworkError") ||
-                                 errorMessage.includes("Failed to fetch") ||
-                                 errorMessage.includes("ECONNREFUSED") ||
-                                 errorMessage.includes("ETIMEDOUT")
-          
-          if (isNetworkError) {
-            console.warn("[v0] Network error fetching metrics (continuing without metrics):", {
-              message: errorMessage,
-              code: metricsError?.code || "NETWORK_ERROR",
-              postIdsCount: validPostIds.length,
-            })
-          } else {
-            // This is likely a query/RLS error
-            console.error("[v0] Error fetching metrics:", {
-              message: errorMessage,
-              code: metricsError?.code || "QUERY_ERROR",
-              details: metricsError?.details || "No details",
-              hint: metricsError?.hint || "No hint",
-              postIdsCount: validPostIds.length,
-            })
-          }
-          // Continue execution even if metrics fetch fails - posts will show without metrics
-        } else if (metricsRows) {
-          for (const row of metricsRows) {
-            if (row && row.post_id && !latestMetricsByPostId.has(row.post_id)) {
-              latestMetricsByPostId.set(row.post_id, row)
-            }
-          }
-          console.log(`[v0] Loaded ${latestMetricsByPostId.size} post metrics for ${validPostIds.length} posts`)
-        } else {
-          console.log(`[v0] No metrics found for ${validPostIds.length} posts`)
-        }
-      }
-    } catch (err: any) {
-      const errorMessage = err?.message || String(err) || "Unknown error"
-      const isNetworkError = errorMessage.includes("fetch failed") || 
-                             errorMessage.includes("NetworkError") ||
-                             errorMessage.includes("Failed to fetch")
-      
-      if (isNetworkError) {
-        console.warn("[v0] Network error fetching metrics (continuing without metrics):", errorMessage)
-      } else {
-        console.error("[v0] Unexpected error fetching metrics:", {
-          message: errorMessage,
-          name: err?.name,
-          stack: err?.stack,
-        })
-      }
-      // Continue execution - posts will show without metrics
-    }
+  // helper: ดึง metric ล่าสุดจาก post (post_metrics ฝังใน query แล้ว)
+  const getLatestMetrics = (post: any) => {
+    const arr = post.post_metrics
+    if (!Array.isArray(arr) || arr.length === 0) return {}
+    const sorted = [...arr].sort(
+      (a: any, b: any) => new Date(b.captured_at || 0).getTime() - new Date(a.captured_at || 0).getTime()
+    )
+    return sorted[0] ?? {}
   }
 
-  // helper small function สำหรับคำนวณ metrics + budget
+  const getKolFromChannel = (kolChannel: any) =>
+    kolChannel?.kols ?? kolChannel?.kol ?? null
+
   const buildPostViewModel = (post: any) => {
-    const metrics = latestMetricsByPostId.get(post.id) ?? {}
+    const metrics = getLatestMetrics(post)
 
-    // คำนวณ budget จาก campaign_kols
-    const kolId = post.kol_channels?.kols?.id
-    const campaignKols = post.campaigns?.campaign_kols ?? []
-
-    let kolBudget = 0
-    if (kolId && Array.isArray(campaignKols)) {
-      const match = campaignKols.find((ck: any) => ck.kol_id === kolId)
-      kolBudget = match?.allocated_budget ?? 0
-    }
-
-    const boostBudget = post.boost_budget
+    // budget: ใช้จาก posts.kol_budget / posts.boost_budget โดยตรง (เหมือนหน้า campaign / post detail)
+    const kolBudget = post.kol_budget != null && post.kol_budget !== ""
+      ? Number(post.kol_budget)
+      : 0
+    const boostBudget = post.boost_budget != null && post.boost_budget !== ""
       ? Number(post.boost_budget)
       : 0
-    const totalBudget = Number(kolBudget) + boostBudget
+    const totalBudget = kolBudget + boostBudget
 
     // metrics base
     const impressionsOrganic = metrics.impressions_organic ?? 0
@@ -254,13 +196,14 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
     // ER%
     const erPercent = totalReach > 0 ? (totalEngage / totalReach) * 100 : 0
 
+    const kol = getKolFromChannel(post.kol_channels)
     return {
       id: post.id,
       post_name: post.post_name || "",
-      kol_name: post.kol_channels?.kols?.name || "Unknown",
-      kol_category: post.kol_channels?.kols?.category || [],
+      kol_name: kol?.name || "Unknown",
+      kol_category: Array.isArray(kol?.category) ? kol.category : [],
       platform: post.kol_channels?.channel_type || "unknown",
-      follower: post.kol_channels?.follower_count || 0,
+      follower: Number(post.kol_channels?.follower_count) || 0,
       posted_at: post.posted_at,
       remark: post.remark || post.notes || "",
       campaign_name: post.campaigns?.name || null,
@@ -282,7 +225,7 @@ export default async function PostsPage({ searchParams }: PostsPageProps) {
       total_engage: totalEngage,
 
       vdo_view: views,
-      kol_budget: Number(kolBudget),
+      kol_budget: kolBudget,
       boost_budget: boostBudget,
       total_budget: totalBudget,
       campaign_id: post.campaign_id,

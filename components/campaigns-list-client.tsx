@@ -38,7 +38,21 @@ type Campaign = {
   budget?: number
   status: string
   post_count?: number
+  comments_count?: number
+  kols_count?: number
+  impression?: number
+  reach?: number
+  engage?: number
+  cost?: number
+  sentiment?: string | null
   created_at: string
+}
+
+function formatNum(n: number | undefined): string {
+  if (n == null || n === 0) return "0"
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return n.toLocaleString("th-TH")
 }
 
 const getStatusColor = (status: string) => {
@@ -254,20 +268,44 @@ export function CampaignsListClient({ initialCampaigns }: { initialCampaigns: Ca
                                 <span>{new Date(campaign.end_date).toLocaleDateString("th-TH")}</span>
                               </div>
                             )}
-                            <div className="flex items-center gap-4 text-sm mt-2">
-                              {campaign.post_count !== undefined && (
-                                <span className="text-muted-foreground">
-                                  <span className="font-semibold text-foreground">{campaign.post_count}</span> โพสต์
-                                </span>
-                              )}
-                              {campaign.budget && (
-                                <span className="text-muted-foreground">
-                                  <span className="font-semibold text-foreground">
-                                    {campaign.budget.toLocaleString()}
-                                  </span>{" "}
-                                  ฿
-                                </span>
-                              )}
+                            <div className="mt-4 rounded-lg border bg-muted/30 p-4">
+                              <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">สรุปตัวเลข</p>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4">
+                                <div className="text-center min-w-0">
+                                  <p className="text-[10px] sm:text-xs text-muted-foreground truncate">KOLs</p>
+                                  <p className="text-base font-semibold tabular-nums">{campaign.kols_count ?? 0}</p>
+                                </div>
+                                <div className="text-center min-w-0">
+                                  <p className="text-[10px] sm:text-xs text-muted-foreground truncate">Posts</p>
+                                  <p className="text-base font-semibold tabular-nums">{campaign.post_count ?? 0}</p>
+                                </div>
+                                <div className="text-center min-w-0">
+                                  <p className="text-[10px] sm:text-xs text-muted-foreground truncate">Comments</p>
+                                  <p className="text-base font-semibold tabular-nums">{campaign.comments_count ?? 0}</p>
+                                </div>
+                                <div className="text-center min-w-0">
+                                  <p className="text-[10px] sm:text-xs text-muted-foreground truncate">Impression</p>
+                                  <p className="text-base font-semibold tabular-nums">{formatNum(campaign.impression)}</p>
+                                </div>
+                                <div className="text-center min-w-0">
+                                  <p className="text-[10px] sm:text-xs text-muted-foreground truncate">Reach</p>
+                                  <p className="text-base font-semibold tabular-nums">{formatNum(campaign.reach)}</p>
+                                </div>
+                                <div className="text-center min-w-0">
+                                  <p className="text-[10px] sm:text-xs text-muted-foreground truncate">Engage</p>
+                                  <p className="text-base font-semibold tabular-nums">{formatNum(campaign.engage)}</p>
+                                </div>
+                                <div className="text-center min-w-0">
+                                  <p className="text-[10px] sm:text-xs text-muted-foreground truncate">ค่าตัว</p>
+                                  <p className="text-base font-semibold tabular-nums">
+                                    {campaign.cost != null && campaign.cost > 0 ? `฿${formatNum(campaign.cost)}` : "-"}
+                                  </p>
+                                </div>
+                                <div className="text-center min-w-0">
+                                  <p className="text-[10px] sm:text-xs text-muted-foreground truncate">Sentiment</p>
+                                  <p className="text-sm font-semibold">{campaign.sentiment ?? "-"}</p>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>

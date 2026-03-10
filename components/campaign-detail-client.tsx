@@ -110,7 +110,10 @@ export function CampaignDetailClient({ campaign: initialCampaign, posts: initial
     }
   }
 
-  const totalAllocated = campaign.campaign_kols?.reduce((sum: number, ck: any) => sum + (ck.allocated_budget || 0), 0) || 0
+  const totalAllocated =
+    campaign.total_allocated_from_posts ??
+    campaign.campaign_kols?.reduce((sum: number, ck: any) => sum + (ck.allocated_budget || 0), 0) ??
+    0
   const formatBudget = (value?: number | null) => {
     if (value === null || value === undefined) return "-"
     return `${value.toLocaleString()} ฿`
@@ -240,7 +243,7 @@ export function CampaignDetailClient({ campaign: initialCampaign, posts: initial
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{campaign.campaign_kols?.length || 0}</p>
+            <p className="text-2xl font-bold">{campaign.kols_count ?? campaign.campaign_kols?.length ?? 0}</p>
             <p className="text-xs text-muted-foreground">KOLs ที่เลือก</p>
           </CardContent>
         </Card>
@@ -251,7 +254,7 @@ export function CampaignDetailClient({ campaign: initialCampaign, posts: initial
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{campaign.channels?.length || 0}</p>
+            <p className="text-2xl font-bold">{campaign.channels_count ?? campaign.channels?.length ?? 0}</p>
             <p className="text-xs text-muted-foreground">ช่องทางที่ใช้</p>
           </CardContent>
         </Card>
@@ -269,11 +272,11 @@ export function CampaignDetailClient({ campaign: initialCampaign, posts: initial
             </div>
           )}
 
-          {campaign.channels && campaign.channels.length > 0 && (
+          {((campaign.channels_display ?? campaign.channels)?.length ?? 0) > 0 && (
             <div>
               <p className="text-sm font-medium text-muted-foreground">ช่องทางที่ใช้</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                {campaign.channels.map((channel: string) => (
+                {(campaign.channels_display ?? campaign.channels ?? []).map((channel: string) => (
                   <Badge key={channel} variant="secondary">
                     {channel}
                   </Badge>
