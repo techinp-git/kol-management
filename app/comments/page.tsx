@@ -90,57 +90,57 @@ export default async function CommentsPage({ searchParams }: CommentsPageProps) 
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Fetch ALL comments for client-side search and statistics
-  const [commentsResponse, tagsResponse, postsResponse] = await Promise.all([
-    supabase
-      .from("comments")
-      .select<CommentQueryResult>(
-        `
-          id,
-          external_comment_id,
-          author,
-          text,
-          timestamp,
-          like_count,
-          post_intention,
-          post_id,
-          post_link,
-          posts!comments_post_id_fkey (
+  const commentsSelectQuery = `
+    id,
+    external_comment_id,
+    author,
+    text,
+    timestamp,
+    like_count,
+    post_intention,
+    post_id,
+    post_link,
+    posts!comments_post_id_fkey (
+      id,
+      external_post_id,
+      post_name,
+      url,
+      campaigns (
+        id,
+        name,
+        projects (
+          accounts (
             id,
-            external_post_id,
-            post_name,
-            url,
-            campaigns (
-              id,
-              name,
-              projects (
-                accounts (
-                  id,
-                  name
-                )
-              )
-            ),
-            kol_channels (
-              id,
-              channel_type,
-              handle,
-              kols (
-                id,
-                name
-              )
-            )
-          ),
-          comment_tags (
-            tags (
-              id,
-              name,
-              type,
-              color
-            )
+            name
           )
-        `,
+        )
+      ),
+      kol_channels (
+        id,
+        channel_type,
+        handle,
+        kols (
+          id,
+          name
+        )
       )
-      .order("timestamp", { ascending: false }),
+    ),
+    comment_tags (
+      tags (
+        id,
+        name,
+        type,
+        color
+      )
+    )
+  `
+
+  // Fetch ALL comments (paginated to bypass Supabase 1000-row default limit)
+  const BATCH_SIZE = 1000
+  let commentsData: CommentQueryResult[] = []
+  let commentsError: any = null
+
+  const [tagsResponse, postsResponse] = await Promise.all([
     supabase.from("tags").select<TagRecord>("id, name, type, color").order("name", { ascending: true }),
     supabase
       .from("posts")
@@ -164,16 +164,29 @@ export default async function CommentsPage({ searchParams }: CommentsPageProps) 
       ),
   ])
 
-  const commentsData = commentsResponse.data ?? []
+  for (let from = 0; ; from += BATCH_SIZE) {
+    const { data, error } = await supabase
+      .from("comments")
+      .select<CommentQueryResult>(commentsSelectQuery)
+      .order("timestamp", { ascending: false })
+      .range(from, from + BATCH_SIZE - 1)
+
+    if (error) {
+      commentsError = error
+      break
+    }
+    if (data) commentsData = commentsData.concat(data)
+    if (!data || data.length < BATCH_SIZE) break
+  }
+
   const tagsData = tagsResponse.data ?? []
   const postsData = postsResponse.data ?? []
   const totalCount = commentsData.length
 
-  if (commentsResponse.error) {
-    console.error("[v0] Error loading comments:", commentsResponse.error)
-    console.error("[v0] Error code:", commentsResponse.error.code)
-    console.error("[v0] Error message:", commentsResponse.error.message)
-    console.error("[v0] Error details:", JSON.stringify(commentsResponse.error, null, 2))
+  console.log(`[v0] Comments loaded: ${totalCount} rows (paginated)`)
+
+  if (commentsError) {
+    console.error("[v0] Error loading comments:", commentsError)
     console.error("[v0] User:", user?.id)
   }
 
@@ -183,11 +196,6 @@ export default async function CommentsPage({ searchParams }: CommentsPageProps) 
 
   if (postsResponse.error) {
     console.error("[v0] Error loading posts:", postsResponse.error)
-  }
-
-  // Log only if there are errors or for debugging
-  if (commentsResponse.error || commentsData.length === 0) {
-    console.log("[v0] Comments loaded:", commentsData.length)
   }
 
   const comments = commentsData.map((comment) => {

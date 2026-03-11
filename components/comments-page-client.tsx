@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useRef, useCallback } from "react"
+import { useEffect, useMemo, useState, useRef } from "react"
 import Link from "next/link"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import {
@@ -21,6 +21,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -111,25 +112,25 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
   const [pendingPage, setPendingPage] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [importDialogOpen, setImportDialogOpen] = useState(false)
-  const [filterPost, setFilterPost] = useState<string>("all")
-  const [filterCampaign, setFilterCampaign] = useState<string>("all")
-  const [filterKOL, setFilterKOL] = useState<string>("all")
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState<string[]>([])
+  const [selectedKolIds, setSelectedKolIds] = useState<string[]>([])
+  const [selectedPostIds, setSelectedPostIds] = useState<string[]>([])
+  const [selectedIntentionFilters, setSelectedIntentionFilters] = useState<string[]>([])
+  const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false)
+  const [kolDropdownOpen, setKolDropdownOpen] = useState(false)
+  const [postDropdownOpen, setPostDropdownOpen] = useState(false)
+  const campaignDropdownRef = useRef<HTMLDivElement | null>(null)
+  const kolDropdownRef = useRef<HTMLDivElement | null>(null)
+  const postDropdownRef = useRef<HTMLDivElement | null>(null)
+  const filterInitializedRef = useRef(false)
   const [tagDialogOpen, setTagDialogOpen] = useState(false)
   const [selectedComment, setSelectedComment] = useState<CommentItem | null>(null)
   const [commentTags, setCommentTags] = useState<Record<string, CommentTag[]>>({})
   const prevCommentIdsRef = useRef<string>('')
-  const currentPageRef = useRef<number>(1) // Track current page for pagination
   
   // Client-side search state
   const [allComments] = useState<CommentItem[]>(comments)
-  const [displayedComments, setDisplayedComments] = useState<CommentItem[]>(comments)
-  const [clientPagination, setClientPagination] = useState({
-    currentPage: currentPage, // Start at the current page from URL
-    totalPages: totalPages,
-    totalCount: totalCount,
-    pageSize: itemsPerPage,
-    filteredComments: comments
-  })
+  const [clientPage, setClientPage] = useState(currentPage)
 
   useEffect(() => {
     // Create a stable string representation of comment IDs
@@ -148,198 +149,151 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [comments.length])
 
-  // Client-side search and pagination function
-  const performClientSearch = useCallback((query: string, postFilter: string, campaignFilter: string, kolFilter: string, page: number = 1) => {
-    let filtered = allComments
-
-    // Apply search filter
-    if (query.trim()) {
-      const searchTerm = query.toLowerCase()
-      filtered = filtered.filter((comment) => {
-        return (
-          comment.text?.toLowerCase().includes(searchTerm) ||
-          comment.author?.toLowerCase().includes(searchTerm) ||
-          comment.post_intention?.toLowerCase().includes(searchTerm) ||
-          comment.posts?.post_name?.toLowerCase().includes(searchTerm) ||
-          comment.posts?.campaign_name?.toLowerCase().includes(searchTerm) ||
-          comment.posts?.kol_channels?.kols?.name?.toLowerCase().includes(searchTerm)
-        )
-      })
-    }
-
-    // Apply filters
-    if (postFilter !== "all") {
-      filtered = filtered.filter(comment => comment.posts?.id === postFilter)
-    }
-    if (campaignFilter !== "all") {
-      filtered = filtered.filter(comment => comment.posts?.campaign_id === campaignFilter)
-    }
-    if (kolFilter !== "all") {
-      filtered = filtered.filter(comment => comment.posts?.kol_channels?.kols?.id === kolFilter)
-    }
-
-    // Calculate pagination
-    const totalCount = filtered.length
-    const pageSize = clientPagination.pageSize
-    const totalPages = Math.ceil(totalCount / pageSize) || 1
-    const validPage = Math.min(Math.max(page, 1), totalPages)
-    const startIndex = (validPage - 1) * pageSize
-    const endIndex = startIndex + pageSize
-    const pageData = filtered.slice(startIndex, endIndex)
-
-    // Update current page ref
-    currentPageRef.current = validPage
-
-    // Update client pagination state
-    setClientPagination({
-      currentPage: validPage,
-      totalPages,
-      totalCount,
-      pageSize,
-      filteredComments: pageData
-    })
-
-    // Update displayed comments
-    if (useClientSideSearch) {
-      setDisplayedComments(pageData)
-    }
-
-    return { pageData, totalPages, totalCount, allFiltered: filtered }
-  }, [allComments, itemsPerPage, useClientSideSearch])
-
-  // Initialize client-side search
-  useEffect(() => {
-    if (useClientSideSearch) {
-      // Initialize with current page from URL, not always page 1
-      performClientSearch("", "all", "all", "all", currentPage)
-    } else {
-      setDisplayedComments(comments)
-    }
-  }, [useClientSideSearch, performClientSearch, currentPage]) // Include currentPage to respect URL
-
-  // Debounced search effect (resets to page 1)
-  useEffect(() => {
-    if (!useClientSideSearch) return
-
-    const timeoutId = setTimeout(() => {
-      // Reset to page 1 when search/filter changes
-      performClientSearch(searchQuery, filterPost, filterCampaign, filterKOL, 1)
-    }, 300)
-
-    return () => clearTimeout(timeoutId)
-  }, [searchQuery, filterPost, filterCampaign, filterKOL, useClientSideSearch, performClientSearch])
-
-  // Separate effect for handling page changes without debounce
-  const handlePageChangeInternal = useCallback((page: number) => {
-    if (!useClientSideSearch) return
-    performClientSearch(searchQuery, filterPost, filterCampaign, filterKOL, page)
-  }, [useClientSideSearch, searchQuery, filterPost, filterCampaign, filterKOL, performClientSearch])
-
-  const postOptions = useMemo(() => {
-    const unique = new Map<string, PostOption>()
-    posts.forEach((post) => {
-      if (!unique.has(post.id)) {
-        unique.set(post.id, post)
-      }
-    })
-    return Array.from(unique.values())
-  }, [posts])
-
+  // Campaign options — จาก comments (INNER JOIN: เฉพาะ campaign ที่มี comment)
   const campaignOptions = useMemo(() => {
     const unique = new Map<string, { id: string; name: string }>()
-    posts.forEach((post) => {
-      if (post.campaign_id && post.campaign_name && !unique.has(post.campaign_id)) {
-        unique.set(post.campaign_id, {
-          id: post.campaign_id,
-          name: post.campaign_name,
-        })
+    allComments.forEach((c) => {
+      const cid = c.posts?.campaign_id
+      const cname = c.posts?.campaign_name
+      if (cid && cname && !unique.has(cid)) {
+        unique.set(cid, { id: cid, name: cname })
       }
     })
-    return Array.from(unique.values())
-  }, [posts])
+    return Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name))
+  }, [allComments])
 
+  // KOL options — จาก comments กรองตาม campaign ที่เลือก
   const kolOptions = useMemo(() => {
+    const allCamp = selectedCampaignIds.length === campaignOptions.length
+    const scope = allCamp
+      ? allComments
+      : allComments.filter((c) => c.posts?.campaign_id && selectedCampaignIds.includes(c.posts.campaign_id))
     const unique = new Map<string, { id: string; name: string }>()
-    posts.forEach((post) => {
-      if (post.kol_id && post.kol_name && !unique.has(post.kol_id)) {
-        unique.set(post.kol_id, {
-          id: post.kol_id,
-          name: post.kol_name,
+    scope.forEach((c) => {
+      const kid = c.posts?.kol_channels?.kols?.id
+      const kname = c.posts?.kol_channels?.kols?.name
+      if (kid && kname && !unique.has(kid)) {
+        unique.set(kid, { id: kid, name: kname })
+      }
+    })
+    return Array.from(unique.values()).sort((a, b) => a.name.localeCompare(b.name))
+  }, [allComments, selectedCampaignIds, campaignOptions.length])
+
+  // Post options — จาก comments กรองตาม campaign + KOL ที่เลือก
+  const postOptions = useMemo(() => {
+    const allCamp = selectedCampaignIds.length === campaignOptions.length
+    const allKol = selectedKolIds.length === kolOptions.length
+    let scope: CommentItem[] = allComments
+    if (!allCamp) scope = scope.filter((c) => c.posts?.campaign_id && selectedCampaignIds.includes(c.posts.campaign_id))
+    if (!allKol) scope = scope.filter((c) => c.posts?.kol_channels?.kols?.id && selectedKolIds.includes(c.posts.kol_channels.kols.id))
+    const unique = new Map<string, PostOption>()
+    scope.forEach((c) => {
+      const p = c.posts
+      if (p && !unique.has(p.id)) {
+        unique.set(p.id, {
+          id: p.id,
+          external_post_id: p.external_post_id,
+          post_name: p.post_name,
+          url: p.url,
+          campaign_id: p.campaign_id,
+          campaign_name: p.campaign_name,
+          kol_id: p.kol_channels?.kols?.id ?? null,
+          kol_name: p.kol_channels?.kols?.name ?? null,
         })
       }
     })
-    return Array.from(unique.values())
-  }, [posts])
+    return Array.from(unique.values()).sort((a, b) =>
+      (a.post_name || a.external_post_id || a.id).localeCompare(b.post_name || b.external_post_id || b.id)
+    )
+  }, [allComments, selectedCampaignIds, selectedKolIds, campaignOptions.length, kolOptions.length])
+
+  const isAllCampaigns = selectedCampaignIds.length === campaignOptions.length
+  const isAllKols = selectedKolIds.length === kolOptions.length
+  const isAllPosts = selectedPostIds.length === postOptions.length
+
+  // เลือกทั้งหมดเมื่อโหลดครั้งแรก
+  useEffect(() => {
+    if (filterInitializedRef.current || campaignOptions.length === 0) return
+    filterInitializedRef.current = true
+    setSelectedCampaignIds(campaignOptions.map((c) => c.id))
+  }, [campaignOptions])
+
+  // เมื่อ campaign เปลี่ยน → reset KOL เป็นทั้งหมด
+  useEffect(() => {
+    setSelectedKolIds(kolOptions.map((k) => k.id))
+  }, [kolOptions])
+
+  // เมื่อ KOL เปลี่ยน → reset Post เป็นทั้งหมด
+  useEffect(() => {
+    setSelectedPostIds(postOptions.map((p) => p.id))
+  }, [postOptions])
+
+  // ปิด dropdown เมื่อคลิกข้างนอก
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (campaignDropdownRef.current && !campaignDropdownRef.current.contains(e.target as Node)) setCampaignDropdownOpen(false)
+      if (kolDropdownRef.current && !kolDropdownRef.current.contains(e.target as Node)) setKolDropdownOpen(false)
+      if (postDropdownRef.current && !postDropdownRef.current.contains(e.target as Node)) setPostDropdownOpen(false)
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  // Reset to page 1 when filters or search change
+  const prevFiltersRef = useRef('')
+  useEffect(() => {
+    const key = `${searchQuery}|${selectedCampaignIds.join(',')}|${selectedKolIds.join(',')}|${selectedPostIds.join(',')}|${selectedIntentionFilters.join(',')}`
+    if (prevFiltersRef.current && prevFiltersRef.current !== key) {
+      setClientPage(1)
+    }
+    prevFiltersRef.current = key
+  }, [searchQuery, selectedCampaignIds, selectedKolIds, selectedPostIds, selectedIntentionFilters])
+
+  // Base filtered (campaign, KOL, post, search only — no intention) for intention buttons list
+  const baseFilteredComments = useMemo(() => {
+    const source = useClientSideSearch ? allComments : comments
+    let filtered = source
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      filtered = filtered.filter(c =>
+        c.text?.toLowerCase().includes(q) || c.author?.toLowerCase().includes(q) || c.post_intention?.toLowerCase().includes(q) ||
+        c.posts?.post_name?.toLowerCase().includes(q) || c.posts?.campaign_name?.toLowerCase().includes(q) ||
+        c.posts?.kol_channels?.kols?.name?.toLowerCase().includes(q)
+      )
+    }
+    if (!isAllCampaigns) filtered = filtered.filter(c => c.posts?.campaign_id && selectedCampaignIds.includes(c.posts.campaign_id))
+    if (!isAllKols) filtered = filtered.filter(c => c.posts?.kol_channels?.kols?.id && selectedKolIds.includes(c.posts.kol_channels.kols.id))
+    if (!isAllPosts) filtered = filtered.filter(c => c.posts?.id && selectedPostIds.includes(c.posts.id))
+    return filtered
+  }, [allComments, comments, searchQuery, isAllCampaigns, isAllKols, isAllPosts, selectedCampaignIds, selectedKolIds, selectedPostIds, useClientSideSearch])
+
+  // All filtered comments (with intention filter) — used for table and pagination
+  const allFilteredComments = useMemo(() => {
+    if (selectedIntentionFilters.length === 0) return baseFilteredComments
+    return baseFilteredComments.filter(c => selectedIntentionFilters.includes(c.post_intention || "ไม่ระบุ"))
+  }, [baseFilteredComments, selectedIntentionFilters])
+
+  // Paginated comments for display
+  const csrTotalPages = Math.ceil(allFilteredComments.length / itemsPerPage) || 1
+  const csrCurrentPage = Math.min(Math.max(clientPage, 1), csrTotalPages)
 
   const filteredComments = useMemo(() => {
-    if (useClientSideSearch) {
-      return displayedComments // Already filtered by performClientSearch
-    }
+    if (!useClientSideSearch) return allFilteredComments
+    const start = (csrCurrentPage - 1) * itemsPerPage
+    return allFilteredComments.slice(start, start + itemsPerPage)
+  }, [useClientSideSearch, allFilteredComments, csrCurrentPage, itemsPerPage])
 
-    return comments.filter((comment) => {
-      const matchesSearch =
-        comment.text?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        comment.author?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        comment.post_intention?.toLowerCase().includes(searchQuery.toLowerCase())
-
-      const matchesPost = filterPost === "all" || comment.posts?.id === filterPost
-      const matchesCampaign =
-        filterCampaign === "all" || comment.posts?.campaign_id === filterCampaign
-      const matchesKOL =
-        filterKOL === "all" || comment.posts?.kol_channels?.kols?.id === filterKOL
-
-      return matchesSearch && matchesPost && matchesCampaign && matchesKOL
-    })
-  }, [comments, displayedComments, searchQuery, filterPost, filterCampaign, filterKOL, useClientSideSearch])
-
-  // Get all filtered comments for statistics (from all pages)
-  const allFilteredComments = useMemo(() => {
-    if (useClientSideSearch) {
-      // Calculate filtered comments without changing state
-      let filtered = allComments
-
-      // Apply search filter
-      if (searchQuery.trim()) {
-        const searchTerm = searchQuery.toLowerCase()
-        filtered = filtered.filter((comment) => {
-          return (
-            comment.text?.toLowerCase().includes(searchTerm) ||
-            comment.author?.toLowerCase().includes(searchTerm) ||
-            comment.post_intention?.toLowerCase().includes(searchTerm) ||
-            comment.posts?.post_name?.toLowerCase().includes(searchTerm) ||
-            comment.posts?.campaign_name?.toLowerCase().includes(searchTerm) ||
-            comment.posts?.kol_channels?.kols?.name?.toLowerCase().includes(searchTerm)
-          )
-        })
-      }
-
-      // Apply filters
-      if (filterPost !== "all") {
-        filtered = filtered.filter(comment => comment.posts?.id === filterPost)
-      }
-      if (filterCampaign !== "all") {
-        filtered = filtered.filter(comment => comment.posts?.campaign_id === filterCampaign)
-      }
-      if (filterKOL !== "all") {
-        filtered = filtered.filter(comment => comment.posts?.kol_channels?.kols?.id === filterKOL)
-      }
-
-      return filtered
-    }
-    return filteredComments
-  }, [allComments, searchQuery, filterPost, filterCampaign, filterKOL, useClientSideSearch, filteredComments])
-
-  // Group count by post_intention (from all filtered data)
+  // รายการปุ่มเจตนา — คำนวณจาก base (ไม่กรองเจตนา) เพื่อให้ปุ่มไม่หายเมื่อเลือก
   const postIntentionStats = useMemo(() => {
     const stats: Record<string, number> = {}
-    allFilteredComments.forEach((comment) => {
+    baseFilteredComments.forEach((comment) => {
       const intention = comment.post_intention || "ไม่ระบุ"
       stats[intention] = (stats[intention] || 0) + 1
     })
     return Object.entries(stats)
       .map(([intention, count]) => ({ intention, count }))
       .sort((a, b) => b.count - a.count)
-  }, [allFilteredComments])
+  }, [baseFilteredComments])
 
   const handleCommentClick = (comment: CommentItem) => {
     setSelectedComment(comment)
@@ -371,16 +325,18 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
   }
 
   const handleResetFilters = () => {
-    setFilterPost("all")
-    setFilterCampaign("all")
-    setFilterKOL("all")
+    setSelectedCampaignIds(campaignOptions.map((c) => c.id))
+    setSelectedKolIds(kolOptions.map((k) => k.id))
+    setSelectedPostIds(postOptions.map((p) => p.id))
+    setSelectedIntentionFilters([])
     setSearchQuery("")
   }
 
   const hasActiveFilters =
-    filterPost !== "all" ||
-    filterCampaign !== "all" ||
-    filterKOL !== "all" ||
+    !isAllCampaigns ||
+    !isAllKols ||
+    !isAllPosts ||
+    selectedIntentionFilters.length > 0 ||
     searchQuery !== ""
 
   const availableSentimentTags = useMemo(
@@ -393,17 +349,15 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
   )
 
   const handlePageChange = (page: number) => {
-    const maxPages = useClientSideSearch ? clientPagination.totalPages : totalPages
-    const currentPageNum = useClientSideSearch ? clientPagination.currentPage : currentPage
+    const maxPages = useClientSideSearch ? csrTotalPages : totalPages
+    const currentPageNum = useClientSideSearch ? csrCurrentPage : currentPage
     
     if (page < 1 || page > maxPages || page === currentPageNum) {
       return
     }
 
     if (useClientSideSearch) {
-      // Client-side pagination (no debounce for page changes)
-      handlePageChangeInternal(page)
-      // Also update URL to keep it in sync
+      setClientPage(page)
       const params = new URLSearchParams(searchParams?.toString() ?? "")
       if (page > 1) {
         params.set("page", page.toString())
@@ -435,7 +389,7 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
   }
 
   const totalComments = useClientSideSearch ? allComments.length : comments.length
-  const filteredCount = useClientSideSearch ? clientPagination.totalCount : filteredComments.length
+  const filteredCount = allFilteredComments.length
   const displayedCount = filteredComments.length
   
   // Calculate total likes from all filtered comments (not just current page)
@@ -533,64 +487,121 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
               )}
             </div>
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-blue-500"></div>
-                  กรองตามโพสต์
-                </Label>
-                <Select value={filterPost} onValueChange={setFilterPost}>
-                  <SelectTrigger className="h-10 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
-                    <SelectValue placeholder="ทั้งหมด" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">ทั้งหมด ({postOptions.length} โพสต์)</SelectItem>
-                    {postOptions.map((post) => (
-                      <SelectItem key={post.id} value={post.id}>
-                        {post.external_post_id || post.post_name || post.url || post.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
+              {/* Campaign */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700 flex items-center gap-2">
                   <div className="h-2 w-2 rounded-full bg-green-500"></div>
                   กรองตามแคมเปญ
                 </Label>
-                <Select value={filterCampaign} onValueChange={setFilterCampaign}>
-                  <SelectTrigger className="h-10 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
-                    <SelectValue placeholder="ทั้งหมด" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">ทั้งหมด ({campaignOptions.length} แคมเปญ)</SelectItem>
-                    {campaignOptions.map((campaign) => (
-                      <SelectItem key={campaign.id} value={campaign.id}>
-                        {campaign.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative" ref={campaignDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setCampaignDropdownOpen((prev) => !prev)}
+                    className="flex h-10 w-full items-center justify-between whitespace-nowrap rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <span className="truncate text-left">
+                      {isAllCampaigns
+                        ? `ทั้งหมด (${campaignOptions.length} แคมเปญ)`
+                        : `${selectedCampaignIds.length}/${campaignOptions.length} แคมเปญ`}
+                    </span>
+                    <svg className="h-4 w-4 opacity-50 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  </button>
+                  {campaignDropdownOpen && (
+                    <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-64 overflow-auto">
+                      <div className="p-2 border-b">
+                        <button type="button" className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => setSelectedCampaignIds(isAllCampaigns ? [] : campaignOptions.map((c) => c.id))}>
+                          {isAllCampaigns ? "Deselect All" : "Select All"}
+                        </button>
+                      </div>
+                      {campaignOptions.map((c) => (
+                        <label key={c.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent transition-colors text-sm">
+                          <Checkbox checked={selectedCampaignIds.includes(c.id)}
+                            onCheckedChange={(checked) => setSelectedCampaignIds((prev) => checked ? [...prev, c.id] : prev.filter((id) => id !== c.id))} />
+                          <span className="truncate">{c.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
+              {/* KOL */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700 flex items-center gap-2">
                   <div className="h-2 w-2 rounded-full bg-purple-500"></div>
                   กรองตาม KOL
                 </Label>
-                <Select value={filterKOL} onValueChange={setFilterKOL}>
-                  <SelectTrigger className="h-10 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
-                    <SelectValue placeholder="ทั้งหมด" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">ทั้งหมด ({kolOptions.length} KOL)</SelectItem>
-                    {kolOptions.map((kol) => (
-                      <SelectItem key={kol.id} value={kol.id}>
-                        {kol.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative" ref={kolDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setKolDropdownOpen((prev) => !prev)}
+                    className="flex h-10 w-full items-center justify-between whitespace-nowrap rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <span className="truncate text-left">
+                      {isAllKols
+                        ? `ทั้งหมด (${kolOptions.length} KOL)`
+                        : `${selectedKolIds.length}/${kolOptions.length} KOL`}
+                    </span>
+                    <svg className="h-4 w-4 opacity-50 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  </button>
+                  {kolDropdownOpen && (
+                    <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-64 overflow-auto">
+                      <div className="p-2 border-b">
+                        <button type="button" className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => setSelectedKolIds(isAllKols ? [] : kolOptions.map((k) => k.id))}>
+                          {isAllKols ? "Deselect All" : "Select All"}
+                        </button>
+                      </div>
+                      {kolOptions.map((k) => (
+                        <label key={k.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent transition-colors text-sm">
+                          <Checkbox checked={selectedKolIds.includes(k.id)}
+                            onCheckedChange={(checked) => setSelectedKolIds((prev) => checked ? [...prev, k.id] : prev.filter((id) => id !== k.id))} />
+                          <span className="truncate">{k.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Post */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-blue-500"></div>
+                  กรองตามโพสต์
+                </Label>
+                <div className="relative" ref={postDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setPostDropdownOpen((prev) => !prev)}
+                    className="flex h-10 w-full items-center justify-between whitespace-nowrap rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <span className="truncate text-left">
+                      {isAllPosts
+                        ? `ทั้งหมด (${postOptions.length} โพสต์)`
+                        : `${selectedPostIds.length}/${postOptions.length} โพสต์`}
+                    </span>
+                    <svg className="h-4 w-4 opacity-50 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  </button>
+                  {postDropdownOpen && (
+                    <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md max-h-64 overflow-auto">
+                      <div className="p-2 border-b">
+                        <button type="button" className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => setSelectedPostIds(isAllPosts ? [] : postOptions.map((p) => p.id))}>
+                          {isAllPosts ? "Deselect All" : "Select All"}
+                        </button>
+                      </div>
+                      {postOptions.map((post) => (
+                        <label key={post.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-accent transition-colors text-sm">
+                          <Checkbox checked={selectedPostIds.includes(post.id)}
+                            onCheckedChange={(checked) => setSelectedPostIds((prev) => checked ? [...prev, post.id] : prev.filter((id) => id !== post.id))} />
+                          <span className="truncate">{post.post_name || post.external_post_id || post.url || post.id}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             
@@ -599,7 +610,7 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
                 แสดง {displayedCount} รายการ จาก {filteredCount.toLocaleString()} ผลลัพธ์
                 {useClientSideSearch && (
                   <span className="ml-2 text-xs text-gray-500">
-                    (หน้า {clientPagination.currentPage}/{clientPagination.totalPages})
+                    (หน้า {csrCurrentPage}/{csrTotalPages})
                   </span>
                 )}
               </div>
@@ -631,17 +642,37 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
               </div>
               <div className="flex flex-wrap gap-2">
                 {postIntentionStats.slice(0, 6).map(({ intention, count }, index) => {
-                  const colors = ['blue', 'green', 'purple', 'orange', 'pink', 'indigo']
-                  const color = colors[index % colors.length]
-                  const percentage = ((count / allFilteredComments.length) * 100).toFixed(1)
-                  
+                  const intentionStyles = [
+                    { bg: "bg-blue-50", border: "border-blue-200", dot: "bg-blue-500", ring: "ring-blue-500" },
+                    { bg: "bg-green-50", border: "border-green-200", dot: "bg-green-500", ring: "ring-green-500" },
+                    { bg: "bg-purple-50", border: "border-purple-200", dot: "bg-purple-500", ring: "ring-purple-500" },
+                    { bg: "bg-orange-50", border: "border-orange-200", dot: "bg-orange-500", ring: "ring-orange-500" },
+                    { bg: "bg-pink-50", border: "border-pink-200", dot: "bg-pink-500", ring: "ring-pink-500" },
+                    { bg: "bg-indigo-50", border: "border-indigo-200", dot: "bg-indigo-500", ring: "ring-indigo-500" },
+                  ]
+                  const style = intentionStyles[index % intentionStyles.length]
+                  const totalBase = baseFilteredComments.length
+                  const percentage = totalBase > 0 ? ((count / totalBase) * 100).toFixed(1) : "0"
+                  const isSelected = selectedIntentionFilters.includes(intention)
+
                   return (
-                    <div key={intention} className={`inline-flex items-center gap-2 px-3 py-2 bg-${color}-50 border border-${color}-200 rounded-lg`}>
-                      <div className={`h-2 w-2 rounded-full bg-${color}-500`}></div>
+                    <button
+                      key={intention}
+                      type="button"
+                      onClick={() => {
+                        setSelectedIntentionFilters((prev) =>
+                          prev.includes(intention)
+                            ? prev.filter((x) => x !== intention)
+                            : [...prev, intention]
+                        )
+                      }}
+                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border transition-all hover:opacity-90 ${style.bg} ${style.border} ${isSelected ? `ring-2 ring-offset-1 ${style.ring}` : "opacity-80"}`}
+                    >
+                      <div className={`h-2 w-2 rounded-full shrink-0 ${style.dot}`} />
                       <span className="text-sm font-medium text-gray-900">{intention}</span>
                       <span className="text-sm text-gray-600">{count}</span>
                       <span className="text-xs text-gray-500">({percentage}%)</span>
-                    </div>
+                    </button>
                   )
                 })}
                 {postIntentionStats.length > 6 && (
@@ -819,15 +850,15 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
           {/* Pagination */}
           {(() => {
             const shouldShowPagination = useClientSideSearch 
-              ? clientPagination.totalPages > 1 
+              ? csrTotalPages > 1 
               : totalPages > 1
             return shouldShowPagination && (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t px-4 sm:px-6">
               <div className="text-sm text-gray-600">
                 {(() => {
-                  const currentPageNum = useClientSideSearch ? clientPagination.currentPage : currentPage
-                  const totalPagesNum = useClientSideSearch ? clientPagination.totalPages : totalPages
-                  const totalCountNum = useClientSideSearch ? clientPagination.totalCount : totalCount
+                  const currentPageNum = useClientSideSearch ? csrCurrentPage : currentPage
+                  const totalPagesNum = useClientSideSearch ? csrTotalPages : totalPages
+                  const totalCountNum = useClientSideSearch ? allFilteredComments.length : totalCount
                   const startItem = ((currentPageNum - 1) * itemsPerPage) + 1
                   const endItem = Math.min(currentPageNum * itemsPerPage, totalCountNum)
                   
@@ -843,8 +874,8 @@ export function CommentsPageClient({ comments, tags, posts, currentPage, totalPa
               
               <div className="flex items-center gap-2">
                 {(() => {
-                  const currentPageNum = useClientSideSearch ? clientPagination.currentPage : currentPage
-                  const totalPagesNum = useClientSideSearch ? clientPagination.totalPages : totalPages
+                  const currentPageNum = useClientSideSearch ? csrCurrentPage : currentPage
+                  const totalPagesNum = useClientSideSearch ? csrTotalPages : totalPages
                   
                   return (
                     <>
